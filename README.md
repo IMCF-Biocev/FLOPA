@@ -14,3 +14,14 @@ Planned functionalities:
   - [ ] segmentation/ROI-based analysis
   - [ ] pixel/object-based phasor generation,
   - [ ] decay fitting
+
+
+conda remove -n flopa --all
+
+conda create -y -n flopa -c conda-forge python=3.10
+conda activate flopa
+python -m pip install "napari[all]"
+python -m pip install "napari[all]" --upgrade
+python -m pip install xarray
+python -m pip install -U matplotlib
+pip install -e .
