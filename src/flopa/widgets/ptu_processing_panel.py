@@ -1,365 +1,314 @@
+# flopa/widgets/ptu_processing_panel.py
+
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog, QSpinBox,
-    QGroupBox, QFormLayout, QMessageBox, QComboBox, QTextEdit, QCheckBox,
-    QProgressBar, QHBoxLayout, QApplication
+    QGroupBox, QFormLayout, QMessageBox, QPlainTextEdit, QHBoxLayout, QApplication,
+    QCheckBox, QDoubleSpinBox, QTextEdit, QDialog, QGridLayout, QScrollArea,
+    QRadioButton, QButtonGroup, QSizePolicy, QComboBox
 )
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QFont
-
-from magicgui.widgets import Container, SpinBox, FloatRangeSlider, ComboBox as MagicComboBox
-import numpy as np
-import xarray as xr
+from qtpy.QtCore import Qt, QSize, Signal
+from qtpy.QtGui import QFont, QIcon
 from pathlib import Path
-from matplotlib import cm
+import traceback
+import xarray as xr
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
-# Import our new backend functions
-from flopa.io.ptuio.reader import TTTRReader
-from flopa.io.ptuio.reconstructor import ScanConfig
 from flopa.processing.reconstruction import reconstruct_ptu_to_dataset
-from flopa.processing.flim_image import create_flim_rgb_image
+from flopa.processing.logger import ProgressLogger
+from flopa.io.loader import read_ptu_file, get_markers, format_ptu_header
+from flopa.io.ptuio.reconstructor import ScanConfig
+from flopa.io.ptuio.utils import estimate_bidirectional_shift
+from flopa.widgets.utils.bidir_shift_plot import plot_bidirectional_shift
+
 
 
 class PtuProcessingPanel(QWidget):
-    def __init__(self, viewer, on_data_loaded, on_flim_image_generated):
+    """
+    A widget for loading a PTU file, configuring scan parameters,
+    and launching the reconstruction process.
+    """
+
+    reconstruction_finished = Signal(xr.Dataset)
+
+    def __init__(self, viewer):
         super().__init__()
         self.viewer = viewer
-        self.on_data_loaded = on_data_loaded
-        self.on_flim_image_generated = on_flim_image_generated
-
-        # Internal state
+        self.ptu_data = None  
         self.ptu_filepath = None
-        self.header_tags = {}
-        self.reconstructed_dataset = None
-        
+        self.shift_plot_data = None 
         self._init_ui()
 
     def _init_ui(self):
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        main_layout = QVBoxLayout(self)
 
-        # --- 1. File Selection ---
-        file_group = QGroupBox("1. Load PTU File")
-        file_layout = QVBoxLayout()
-        
+        # --- Group 1: Select Data Source ---
+        file_group = QGroupBox("1. Select Data Source")
+        file_layout = QVBoxLayout(file_group)
         self.file_label = QLabel("No file selected.")
-        file_layout.addWidget(self.file_label)
-
-        # Create a horizontal layout for the two buttons
         button_layout = QHBoxLayout()
-
-        self.select_file_btn = QPushButton("Select PTU File...")
-        self.select_file_btn.clicked.connect(self._select_ptu_file)
-        button_layout.addWidget(self.select_file_btn)
-
-        # Option B: Load an existing H5 file
+        self.select_ptu_btn = QPushButton("Process PTU File...")
+        self.select_ptu_btn.clicked.connect(self._select_ptu_file)
+        button_layout.addWidget(self.select_ptu_btn)
         self.select_h5_btn = QPushButton("Load H5...")
-        self.select_h5_btn.setToolTip("Load a previously reconstructed .h5 file.")
-        self.select_h5_btn.clicked.connect(self._select_h5_file)
+        self.select_h5_btn.setEnabled(False)
+        self.select_h5_btn.setToolTip("Loading from H5 is not yet implemented.")
         button_layout.addWidget(self.select_h5_btn)
-        
+        file_layout.addWidget(self.file_label)
         file_layout.addLayout(button_layout)
-        
-        file_group.setLayout(file_layout)
-        layout.addWidget(file_group)
+        main_layout.addWidget(file_group)
 
-        # --- 2. Header Info & Configuration ---
-        self.config_group = QGroupBox("2. Scan Configuration")
-        config_form_layout = QFormLayout()
-
-        # Configurable fields
-        self.lines_spin = QSpinBox()
-        self.lines_spin.setRange(1, 10000)
-        self.pixels_spin = QSpinBox()
-        self.pixels_spin.setRange(1, 10000)
-        self.frames_spin = QSpinBox()
-        self.frames_spin.setRange(1, 1000)
-        self.frames_spin.setValue(1)
-        self.accu_spin = QSpinBox()
-        self.accu_spin.setRange(1, 100)
-        self.accu_spin.setValue(1)
-        self.bidir_check = QCheckBox("Bidirectional Scan")
-
-        config_form_layout.addRow("Lines:", self.lines_spin)
-        config_form_layout.addRow("Pixels per Line:", self.pixels_spin)
-        config_form_layout.addRow("Frames:", self.frames_spin)
-        config_form_layout.addRow("Line Accumulations:", self.accu_spin)
-        config_form_layout.addRow(self.bidir_check)
-        
+        # --- Group 2: Header Info ---
+        self.header_group = QGroupBox("2. Header Info")
+        header_layout = QVBoxLayout(self.header_group)
         self.header_info = QTextEdit()
         self.header_info.setReadOnly(True)
         self.header_info.setFont(QFont("Courier", 8))
-        self.header_info.setFixedHeight(100)
-        config_form_layout.addRow("Header Info:", self.header_info)
-        
-        self.config_group.setLayout(config_form_layout)
-        layout.addWidget(self.config_group)
-        self.config_group.setVisible(False) # Hide until file is loaded
+        header_layout.addWidget(self.header_info)
+        marker_layout = QHBoxLayout()
+        self.markers_button = QPushButton("Markers")
+        self.markers_button.clicked.connect(self._show_markers)
+        marker_layout.addWidget(self.markers_button)
+        self.markers_output = QLabel("")
+        self.markers_output.setFont(QFont("Courier", 8))
+        marker_layout.addWidget(self.markers_output)
+        header_layout.addLayout(marker_layout)
+        main_layout.addWidget(self.header_group)
+        self.header_group.setVisible(False)
 
-        # --- 3. Reconstruction ---
-        self.recon_group = QGroupBox("3. Reconstruct and Load")
-        recon_layout = QVBoxLayout()
-        self.reconstruct_btn = QPushButton("Reconstruct Image")
-        self.reconstruct_btn.clicked.connect(self._run_reconstruction)
-        recon_layout.addWidget(self.reconstruct_btn)
-        self.progress_bar = QProgressBar(); self.progress_bar.setVisible(False)
-        recon_layout.addWidget(self.progress_bar)
-        self.recon_group.setLayout(recon_layout)
-        layout.addWidget(self.recon_group)
+        # --- Group 3: Scan Configuration ---
+        self.config_group = QGroupBox("3. Scan Configuration")
+        config_main_layout = QVBoxLayout(self.config_group)
+        grid_layout = QGridLayout()
+        grid_layout.setColumnStretch(0, 1)
+        grid_layout.setColumnStretch(1, 1)
+
+        # --- Left Column ---
+        left_group = QGroupBox(" ")
+        left_layout = QFormLayout(left_group)
+        self.lines_spin = QSpinBox(); self.lines_spin.setRange(1, 10000)
+        left_layout.addRow("Lines:", self.lines_spin)
+        self.pixels_spin = QSpinBox(); self.pixels_spin.setRange(1, 10000)
+        left_layout.addRow("Pixels per Line:", self.pixels_spin)
+        self.frames_spin = QSpinBox(); self.frames_spin.setRange(1, 1000); self.frames_spin.setValue(1)
+        left_layout.addRow("Frames:", self.frames_spin)
+        self.tcspc_bins_spin = QSpinBox(); self.tcspc_bins_spin.setRange(1, 65536)
+        left_layout.addRow("TCSPC Bins:", self.tcspc_bins_spin)
+        self.max_detector_spin = QSpinBox(); self.max_detector_spin.setRange(1, 128); self.max_detector_spin.setValue(2)
+        left_layout.addRow("Max Detector:", self.max_detector_spin)
+        grid_layout.addWidget(left_group, 0, 0)
+
+        # --- Right Column ---
+        right_group = QGroupBox(" ")
+        right_layout = QFormLayout(right_group)
+        self.sequences_spin = QSpinBox(); self.sequences_spin.setRange(1, 16); self.sequences_spin.setValue(1)
+        right_layout.addRow("n Sequences:", self.sequences_spin)
+        self.accu_scroll_area = QScrollArea(); self.accu_scroll_area.setWidgetResizable(True); self.accu_scroll_area.setFixedHeight(80); self.accu_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.accu_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.accu_container = QWidget(); self.accu_container_layout = QVBoxLayout(self.accu_container); self.accu_container_layout.setContentsMargins(5, 5, 5, 5); self.accu_container_layout.setSpacing(5)
+        self.accu_scroll_area.setWidget(self.accu_container); self.accu_spinboxes = []
+        right_layout.addRow("Accumulations:", self.accu_scroll_area)
+        # Bidirectional controls row
+        bidir_controls_widget = QWidget(); bidir_controls_layout = QHBoxLayout(bidir_controls_widget); bidir_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.bidir_check = QCheckBox("Bidirectional"); bidir_controls_layout.addWidget(self.bidir_check)
+        self.bidir_buttons_container = QWidget(); bidir_buttons_layout = QHBoxLayout(self.bidir_buttons_container); bidir_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.btn_estimate_shift = QPushButton("Estimate"); self.btn_estimate_shift.clicked.connect(self._on_estimate_shift_clicked); bidir_buttons_layout.addWidget(self.btn_estimate_shift)
+        self.btn_plot_shift = QPushButton(); icon_path = "./assets/icons/plot_icon.png" 
+        if Path(icon_path).exists(): self.btn_plot_shift.setIcon(QIcon(icon_path)); self.btn_plot_shift.setIconSize(QSize(16, 16))
+        else: self.btn_plot_shift.setText("Plot")
+        self.btn_plot_shift.setToolTip("Plot shift correlation curve"); self.btn_plot_shift.clicked.connect(self._on_plot_shift_clicked); self.btn_plot_shift.setEnabled(False)
+        bidir_buttons_layout.addWidget(self.btn_plot_shift)
+        bidir_controls_layout.addWidget(self.bidir_buttons_container); bidir_controls_layout.addStretch()
+        right_layout.addRow(bidir_controls_widget)
+        # Phase shift controls row
+        self.phase_shift_container = QWidget(); phase_shift_layout = QHBoxLayout(self.phase_shift_container); phase_shift_layout.setContentsMargins(0, 0, 0, 0)
+        phase_shift_layout.addWidget(QLabel("Phase Shift:"))
+        self.bidir_phase_spinbox = QDoubleSpinBox(); self.bidir_phase_spinbox.setRange(-0.2, 0.2); self.bidir_phase_spinbox.setSingleStep(0.001); self.bidir_phase_spinbox.setDecimals(4)
+        size_policy = self.bidir_phase_spinbox.sizePolicy(); size_policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding); self.bidir_phase_spinbox.setSizePolicy(size_policy)
+        phase_shift_layout.addWidget(self.bidir_phase_spinbox)
+        right_layout.addRow("", self.phase_shift_container)
+        grid_layout.addWidget(right_group, 0, 1)
+        config_main_layout.addLayout(grid_layout)
+        main_layout.addWidget(self.config_group)
+        self.config_group.setVisible(False)
+        # Connections and initial state for scan config
+        self.sequences_spin.valueChanged.connect(self._update_accumulation_widgets)
+        self.bidir_check.toggled.connect(self.bidir_buttons_container.setVisible)
+        self.bidir_check.toggled.connect(self.phase_shift_container.setVisible)
+        self._update_accumulation_widgets()
+        self.bidir_buttons_container.setVisible(False)
+        self.phase_shift_container.setVisible(False)
+
+        # --- Group 4: Reconstruction ---
+        self.recon_group = QGroupBox("4. Reconstruction")
+        recon_layout = QFormLayout(self.recon_group)
+        self.output_combo = QComboBox()
+        self.output_combo.addItem("Intensity", "photon_count")
+        self.output_combo.addItem("Mean Lifetime", "mean_arrival_time")
+        self.output_combo.addItem("Phasor & Decay", "all")
+        recon_layout.addRow("Select Output Type:", self.output_combo)
+        self.log_text_edit = QPlainTextEdit(); self.log_text_edit.setReadOnly(True); self.log_text_edit.setMinimumHeight(120)
+        recon_layout.addRow("Reconstruction Log:", self.log_text_edit)
+        self.reconstruct_btn = QPushButton("Reconstruct Image"); self.reconstruct_btn.clicked.connect(self._run_reconstruction)
+        recon_layout.addRow(self.reconstruct_btn)
+        main_layout.addWidget(self.recon_group)
         self.recon_group.setVisible(False)
-
-        # recon_group = QGroupBox("3. Reconstruct and Load")
-        # recon_layout = QVBoxLayout()
-
-        # self.reconstruct_btn = QPushButton("Reconstruct Image")
-        # self.reconstruct_btn.clicked.connect(self._run_reconstruction)
-        # recon_layout.addWidget(self.reconstruct_btn)
         
-        # self.progress_bar = QProgressBar()
-        # self.progress_bar.setVisible(False)
-        # recon_layout.addWidget(self.progress_bar)
+        main_layout.addStretch()
 
-        # recon_group.setLayout(recon_layout)
-        # layout.addWidget(recon_group)
-        # self.recon_group.setVisible(False)
-
-        # self.reconstruct_btn.setEnabled(False)
-
-        # --- 4. FLIM View Controls ---
-        self.view_controls_container = QWidget()
-        self.view_controls_container.setVisible(False) # Hide until data is ready
-        layout.addWidget(self.view_controls_container)
-
-        layout.addStretch()
-
-    def _select_ptu_file(self):
+    def _select_ptu_file(self, *args, **kwargs):
         filepath_str, _ = QFileDialog.getOpenFileName(self, "Select PTU File", "", "PicoQuant Files (*.ptu)")
-        if not filepath_str:
-            return
-
+        if not filepath_str: return
         self.ptu_filepath = Path(filepath_str)
-        self.file_label.setText(f"Selected: {self.ptu_filepath.name}")
-
+        self.file_label.setText(f"PTU Selected: {self.ptu_filepath.name}")
         try:
-            reader = TTTRReader(str(self.ptu_filepath))
-            self.header_tags = reader.header.tags
-            
-            # Display some key header info
-            header_text = "\n".join(f"{k}: {v}" for k, v in self.header_tags.items() if "ImgHdr" in k or "SyncRate" in k or "Resolution" in k)
+            self.ptu_data = read_ptu_file(str(self.ptu_filepath))
+            header_tags = self.ptu_data["header"]
+            constants = self.ptu_data["constants"]
+            header_text = format_ptu_header(header_tags, constants, full_header=True)            
             self.header_info.setText(header_text)
-            
-            # Pre-populate config fields from header if possible
-            self.lines_spin.setValue(self.header_tags.get("ImgHdr_PixY", 512))
-            self.pixels_spin.setValue(self.header_tags.get("ImgHdr_PixX", 512))
-            # Other fields might not be in standard headers, so we use defaults.
-
+            self.tcspc_bins_spin.setValue(constants.get('tcspc_bins', 4096))
+            self.lines_spin.setValue(header_tags.get("ImgHdr_PixY", 512))
+            self.pixels_spin.setValue(header_tags.get("ImgHdr_PixX", 512))
+            self.header_group.setVisible(True)
             self.config_group.setVisible(True)
             self.recon_group.setVisible(True)
-            self.reconstruct_btn.setEnabled(True)
-            self.view_controls_container.setVisible(False)
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to read PTU header:\n{e}")
-            self.file_label.setText("Failed to load file.")
 
-    def _select_h5_file(self):
-        filepath_str, _ = QFileDialog.getOpenFileName(self, "Select Reconstructed H5 File", "", "HDF5 Files (*.h5 *.hdf5)")
-        if not filepath_str: return
+
+    def _show_markers(self):
+        if not self.ptu_data:
+            self.markers_output.setText("No file loaded.")
+            return
+        try:
+            markers_dict = get_markers(self.ptu_data['reader'], chunk_limit=20) # Limit for speed
+            if "error" in markers_dict:
+                self.markers_output.setText(markers_dict["error"])
+            else:
+                text = ", ".join(f"{k}: {v}" for k, v in markers_dict.items())
+                self.markers_output.setText(text)
+        except Exception as e:
+            self.markers_output.setText(f"Error: {e}")
+
+
+    def _update_accumulation_widgets(self):
+        while self.accu_container_layout.count():
+            item = self.accu_container_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        self.accu_spinboxes.clear()
+
+        num_sequences = self.sequences_spin.value()
+        for i in range(num_sequences):
+            row_widget = QWidget(); row_layout = QHBoxLayout(row_widget) 
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            label = QLabel(f"S{i+1}:")
+            accu_spin = QSpinBox()
+            accu_spin.setRange(1, 1000)
+            accu_spin.setValue(1)
+            row_layout.addWidget(label)
+            row_layout.addWidget(accu_spin)
+            self.accu_container_layout.addWidget(row_widget)
+            self.accu_spinboxes.append(accu_spin)
+
+        self.accu_container_layout.addStretch()
+
+
+    def _on_estimate_shift_clicked(self):
+        if not self.ptu_data:
+            QMessageBox.warning(self, "No File", "Please load a PTU file first."); return
         
-        h5_filepath = Path(filepath_str)
-        self.file_label.setText(f"H5 Loaded: {h5_filepath.name}")
+        self.shift_plot_data = None; self.btn_plot_shift.setEnabled(False)
+        self.btn_estimate_shift.setText("Estimating...")
+        self.log_text_edit.appendPlainText("Estimating bidirectional shift...")
+        QApplication.processEvents()
 
         try:
-            loaded_dataset = xr.open_dataset(h5_filepath)
+            accumulations = tuple([spin.value() for spin in self.accu_spinboxes])
+            if not accumulations:
+                QMessageBox.warning(self, "Config Error", "Please set at least one accumulation value.")
+                return
             
-            # Hide the PTU-specific widgets
-            self.config_group.setVisible(False)
-            self.recon_group.setVisible(False)
+            temp_config = ScanConfig(
+                lines=self.lines_spin.value(), 
+                pixels=self.pixels_spin.value(), 
+                bidirectional=True, 
+                bidirectional_phase_shift=self.bidir_phase_spinbox.value(),
+                line_accumulations=accumulations, 
+                max_detector=self.max_detector_spin.value()
+            )
 
-            # Directly load the data for viewing
-            self._load_data_from_dataset(loaded_dataset)
+            best_shift, plot_data = estimate_bidirectional_shift(reader=self.ptu_data['reader'], config=temp_config, wrap=self.ptu_data['constants']['wrap'], verbose=False)
+            if best_shift is not None:
+                self.bidir_phase_spinbox.setValue(best_shift)
+                self.log_text_edit.appendPlainText(f"Estimation complete. Best shift: {best_shift:.5f}")
+                self.shift_plot_data = plot_data
+                self.btn_plot_shift.setEnabled(True)
+            else:
+                self.log_text_edit.appendPlainText("Estimation failed.")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load HDF5 file:\n{e}")
+            error_msg = f"An error occurred during shift estimation:\n{e}"
+            self.log_text_edit.appendPlainText(f"--- ERROR ---\n{error_msg}\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "Estimation Error", error_msg)
 
-    def _update_progress(self, current, total):
-        self.progress_bar.setValue(int(100 * current / total))
-        QApplication.processEvents() # Force UI update
+        finally:
+            self.btn_estimate_shift.setText("Estimate")
+
+
+    def _on_plot_shift_clicked(self):
+        if self.shift_plot_data is None:
+            QMessageBox.warning(self, "No Data", "Please run estimation first."); return
+        
+        dialog = QDialog(self); dialog.setWindowTitle("Bidirectional Shift Estimation")
+        dialog_layout = QVBoxLayout(dialog); canvas = FigureCanvas(Figure(figsize=(6, 4)))
+        dialog_layout.addWidget(canvas)
+        plot_bidirectional_shift(self.shift_plot_data, ax=canvas.figure.subplots())
+        dialog.exec_()
+
 
     def _run_reconstruction(self):
-        if not self.ptu_filepath:
-            return
-
-        self.reconstruct_btn.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-
-        # 1. Create ScanConfig from UI
-        scan_config = ScanConfig(
-            lines=self.lines_spin.value(),
-            pixels=self.pixels_spin.value(),
-            frames=self.frames_spin.value(),
-            bidirectional=self.bidir_check.isChecked(),
-            line_accumulations=(self.accu_spin.value(),)
-        )
-
+        if not self.ptu_data:
+            QMessageBox.warning(self, "No Data", "Please load a PTU file first."); return
+        self.log_text_edit.clear(); self.reconstruct_btn.setEnabled(False)
+        self.log_text_edit.appendPlainText("Starting reconstruction..."); QApplication.processEvents()
         try:
-            # 2. Run the backend processing function
-            self.reconstructed_data = reconstruct_ptu_to_dataset(
-                self.ptu_filepath,
-                scan_config,
-                progress_callback=self._update_progress
-            )
-            
-            # 3. Ask user where to save the H5 file
-            default_h5_path = self.ptu_filepath.with_suffix('.h5')
-            save_path_str, _ = QFileDialog.getSaveFileName(
-                self, "Save Reconstructed Data", str(default_h5_path), "HDF5 Files (*.h5)"
-            )
-            
-            if save_path_str:
-                self.reconstructed_data.to_netcdf(save_path_str)
-                QMessageBox.information(self, "Success", f"Reconstruction complete.\nData saved to {save_path_str}")
-            
-            # 4. Load data into the widget for viewing
-            self._load_data_from_dataset(self.reconstructed_data)
+            accumulations = tuple([spin.value() for spin in self.accu_spinboxes])
 
+            scan_config = ScanConfig(
+                lines=self.lines_spin.value(), 
+                pixels=self.pixels_spin.value(), 
+                frames=self.frames_spin.value(), 
+                bidirectional=self.bidir_check.isChecked(), 
+                line_accumulations=accumulations, 
+                bidirectional_phase_shift=self.bidir_phase_spinbox.value(), 
+                max_detector=self.max_detector_spin.value()
+            )
 
+            selected_output = self.output_combo.currentData()
+            outputs_to_generate = [selected_output]
+            
+            logger = ProgressLogger(mode='qt')
+            logger.connect(lambda msg: self.log_text_edit.appendPlainText(msg))
+            
+            reconstructed_data = reconstruct_ptu_to_dataset(
+                ptu_data=self.ptu_data,
+                scan_config=scan_config,
+                outputs=outputs_to_generate,
+                tcspc_channels_override=self.tcspc_bins_spin.value(),
+                logger=logger  
+            )
+
+            reconstructed_data.attrs['instrument_params'] = {
+                'tcspc_bins': self.tcspc_bins_spin.value(),
+                'MeasDesc_Resolution': self.ptu_data['header'].get("MeasDesc_Resolution"),
+                'TTResult_SyncRate': self.ptu_data['header'].get("TTResult_SyncRate")
+            }
+            reconstructed_data.attrs['scan_config'] = scan_config.to_dict()
+
+            self.reconstruction_finished.emit(reconstructed_data)
 
         except Exception as e:
-            QMessageBox.critical(self, "Reconstruction Error", f"An error occurred:\n{e}")
+            tb_str = "".join(traceback.format_tb(e.__traceback__)); error_msg = f"--- ERROR ---\n{e}\n{tb_str}"
+            self.log_text_edit.appendPlainText(error_msg); QMessageBox.critical(self, "Reconstruction Error", f"An error occurred:\n{e}")
         finally:
             self.reconstruct_btn.setEnabled(True)
-            self.progress_bar.setVisible(False)
-
-    # def _load_data_from_dataset(self):
-    #     """Called after reconstruction to load data and set up viewing controls."""
-    #     if self.reconstructed_dataset is None:
-    #         return
-
-    #     # Get the resolution from the dataset attributes for unit conversion
-    #     tcspc_resolution_str = self.reconstructed_dataset.attrs.get("MeasDesc_Resolution", "5e-12")
-    #     tcspc_resolution_s = float(tcspc_resolution_str)
-
-    #     # Prepare data for the rest of the application
-    #     self.data_intensity = np.array(self.reconstructed_dataset.photon_count)
-    #     self.data_lifetime = np.array(self.reconstructed_dataset.mean_photon_arrival_time) * tcspc_resolution_s * 1e9 # to ns
-
-    #     # Prepare data for the rest of the application
-    #     # intensity = np.array(self.reconstructed_dataset.photon_count.transpose("frame", "sequence", "channel", "line", "pixel"), dtype=int)
-        
-    #     # # Convert lifetime to ns
-    #     # tcspc_resolution_s = self.header_tags.get("MeasDesc_Resolution", 5e-12)
-    #     # lifetime = np.array(self.reconstructed_dataset.mean_photon_arrival_time.transpose("frame", "sequence", "channel", "line", "pixel"), dtype=float) * tcspc_resolution_s * 1e9
-
-    #     # self.data_intensity = intensity
-    #     # self.data_lifetime = lifetime
-
-    #     # Signal to main widget that data is ready
-    #     self.on_data_loaded({"intensity": self.data_intensity, "lifetime": self.data_lifetime})
-        
-    #     # Create the viewer controls
-    #     self._create_flim_view_controls()
-    #     self.view_controls_container.setVisible(True)
-    def _load_data_from_dataset(self, dataset: xr.Dataset):
-        """Prepares data from a dataset and sets up viewing controls."""
-        if dataset is None: return
-
-        self.reconstructed_dataset = dataset
-
-        try:
-            tcspc_resolution_s = float(dataset.attrs.get("MeasDesc_Resolution", "5e-12"))
-        except (ValueError, TypeError):
-            tcspc_resolution_s = 5e-12
-            print("Warning: Could not parse 'MeasDesc_Resolution' from H5 attrs, using default 5ps.")
-
-        # --- ENFORCE DIMENSION ORDER HERE ---
-        # Define our standard internal order
-        standard_order = ("frame", "sequence", "channel", "line", "pixel")
-
-        # Transpose the DataArrays to match our standard order
-        intensity_da = dataset.photon_count.transpose(*standard_order, missing_dims='ignore')
-        lifetime_da = dataset.mean_photon_arrival_time.transpose(*standard_order, missing_dims='ignore')
-        
-        # Now convert to numpy arrays
-        self.data_intensity = np.array(intensity_da)
-        self.data_lifetime = np.array(lifetime_da) * tcspc_resolution_s * 1e9 # to ns
-        
-        print(f"Data loaded with shape (frame, sequence, channel, line, pixel): {self.data_intensity.shape}")
-        
-        # The rest of the function remains the same
-        self.on_data_loaded({"intensity": self.data_intensity, "lifetime": self.data_lifetime})
-        self._create_flim_view_controls()
-        self.view_controls_container.setVisible(True)
-
-
-
-    def _create_flim_view_controls(self):
-        if self.data_intensity is None or self.data_lifetime is None:
-            return
-        
-        n_frames, n_sequences, n_channels, _, _ = self.data_intensity.shape
-        int_max = np.nanmax(self.data_intensity)
-
-        frame_selector = SpinBox(name="Frame", min=0, max=n_frames - 1, step=1)
-        sequence_selector = SpinBox(name="Sequence", min=0, max=n_sequences - 1, step=1)
-        channel_selector = SpinBox(name="Channel", min=0, max=n_channels - 1, step=1)
-        lt_range_slider = FloatRangeSlider(name="Lifetime (ns)", min=0.0, max=10.0, value=(0.5, 4.0), step=0.1)
-        int_range_slider = FloatRangeSlider(name="Intensity", min=0.0, value=(0.0, int_max / 2 if int_max > 0 else 1.0), max=int_max if int_max > 0 else 1.0, step=1)
-
-        COLORMAP_OPTIONS = ["rainbow", "viridis", "plasma", "inferno", "magma", "cividis", "jet", "gray"]
-        colormap_selector = MagicComboBox(name="Lifetime Colormap", choices=COLORMAP_OPTIONS, value="rainbow")
-
-        def update_flim_gui():
-            frame = frame_selector.value
-            sequence = sequence_selector.value
-            channel = channel_selector.value
-            lt_min, lt_max = lt_range_slider.value
-            int_min, int_max = int_range_slider.value
-            cmap_obj = cm.get_cmap(colormap_selector.value)
-
-            lt_img = self.data_lifetime[frame, sequence, channel, :, :]
-            int_img = self.data_intensity[frame, sequence, channel, :, :]
-
-            flim_rgb = create_flim_rgb_image(
-                mean_photon_arrival_time=lt_img,
-                intensity=int_img,
-                colormap=cmap_obj,
-                lt_min=lt_min,
-                lt_max=lt_max,
-                int_min=int_min,
-                int_max=int_max,
-            )
-
-            if 'FLIM' in self.viewer.layers:
-                self.viewer.layers['FLIM'].data = flim_rgb
-            else:
-                self.viewer.add_image(flim_rgb, name='FLIM', rgb=True)
-
-            self.on_flim_image_generated(flim_rgb, int_img, lt_img)
-
-        # Connect signals to update function
-        for widget in [frame_selector, sequence_selector, channel_selector, lt_range_slider, int_range_slider, colormap_selector]:
-            widget.changed.connect(update_flim_gui)
-
-        control_panel = Container(widgets=[
-            frame_selector, sequence_selector, channel_selector,
-            lt_range_slider, int_range_slider, colormap_selector
-        ])
-        
-        # Embed the magicgui container into our Qt layout
-        # Clear previous controls if any
-        if self.view_controls_container.layout() is not None:
-             # Simple way to clear existing widgets
-             while self.view_controls_container.layout().count():
-                 child = self.view_controls_container.layout().takeAt(0)
-                 if child.widget():
-                     child.widget().deleteLater()
-        
-        view_layout = QVBoxLayout()
-        view_layout.addWidget(control_panel.native)
-        self.view_controls_container.setLayout(view_layout)
-        
-        # Trigger initial update
-        update_flim_gui()
-
-

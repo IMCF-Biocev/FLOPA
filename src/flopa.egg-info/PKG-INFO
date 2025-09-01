@@ -1,8 +1,9 @@
 Metadata-Version: 2.4
 Name: flopa
 Version: 0.1.0
+Summary: tool for FLIM (TCSPC) data analysis
+Author-email: Zuzana Cockova <cockovaz@natur.cuni.cz>, Dalibor Panek <panekdal@natur.cuni.cz>
 License-File: LICENSE
 Requires-Dist: numpy
-Requires-Dist: napari
+Requires-Dist: scikit-image
 Dynamic: license-file
-Dynamic: requires-dist

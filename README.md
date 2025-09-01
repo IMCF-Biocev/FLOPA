@@ -25,3 +25,31 @@ python -m pip install "napari[all]" --upgrade
 python -m pip install xarray
 python -m pip install -U matplotlib
 pip install -e .
+
+
+```
+FLOPA/
+├── main.py                     # <-- to be made
+└── flopa/
+    ├── __init__.py
+    ├── io/
+    │   ├── __init__.py
+    │   ├── decoder.py
+    │   ├── file.py
+    │   ├── reader.py
+    │   └── reconstructor.py    # <-- MODIFIED
+    ├── processing/
+    │   ├── __init__.py
+    │   ├── flim_image.py
+    │   ├── phasor.py
+    │   └── reconstruction.py   # <-- NEW
+    └── widgets/
+        ├── __init__.py
+        ├── decay_panel.py      # <-- NEW
+        ├── flim_widget.py      # <-- MODIFIED
+        ├── phasor_panel.py
+        ├── ptu_processing_panel.py # <-- MODIFIED
+        └── utils/
+            ├── __init__.py
+            └── style.py        # <-- Placeholder
+```

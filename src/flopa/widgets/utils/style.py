@@ -1,3 +1,5 @@
+# flopa/widgets/utils/style.py
+
 def dark_plot(ax, fig):
     """Applies a dark theme to a matplotlib axis and figure."""
     dark_grey = "#262930"  # Napari's dark grey 262930

@@ -1,88 +1,72 @@
-# src/my_tool/widgets/flim_widget.py
-
-# from qtpy.QtWidgets import (
-#     QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel,
-#     QTabWidget, QGridLayout, QComboBox, QRadioButton, QGroupBox,
-#     QSpinBox, QTextEdit
-# )
-# from qtpy.QtCore import Qt
-
-# # For embedding matplotlib plots in the Qt widget
-# from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-# from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-# from matplotlib.figure import Figure
-# from matplotlib.lines import Line2D # For custom plot elements
-# from matplotlib.widgets import RectangleSelector
-# from matplotlib.colors import LogNorm
-
-
-# from magicgui.widgets import Container, SpinBox, FloatRangeSlider
-# import numpy as np
-# from pathlib import Path
-# import warnings
-
-# from flopa.widgets.phasor_panel import PhasorPanel
+# flopa/widgets/napari_flim_widget.py
 
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QTabWidget
-#from flopa.widgets.load_view_panel import LoadViewPanel
-from flopa.widgets.ptu_processing_panel import PtuProcessingPanel # <-- USE THIS
+from qtpy.QtCore import Slot
+import xarray as xr
+import numpy as np
+
+from flopa.widgets.ptu_processing_panel import PtuProcessingPanel
 from flopa.widgets.phasor_panel import PhasorPanel
-from flopa.io.loader import read_ptu_file
+# from flopa.widgets.decay_panel import DecayPanel
 
 
 class FlimWidget(QWidget):
-    def __init__(self, viewer):
+    def __init__(self, viewer, flim_view_panel):
         super().__init__()
         self.viewer = viewer
-
-        self.data = None             # Holds loaded data + metadata, corrected or not
-        self.flim_image = None       # Holds current generated FLIM image
-
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
+        self.reconstructed_dataset = None
+        self.view_tab = flim_view_panel
+        
+        # --- UI Setup ---
+        layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
-        self.layout().addWidget(self.tabs)
+        layout.addWidget(self.tabs)
 
-        # Load Data tab is always enabled and first
-        #self.load_view_tab = LoadViewPanel(viewer, self.on_data_loaded, self.on_flim_image_generated)
-        #self.tabs.addTab(self.load_view_tab, "Load and View")
+        # --- Add All Panels to the Tab Widget ---
+        self.processing_tab = PtuProcessingPanel(viewer)
+        self.tabs.addTab(self.processing_tab, "Process PTU")
 
-        self.processing_tab = PtuProcessingPanel(
-            viewer,
-            self.on_data_loaded,
-            self.on_flim_image_generated
-        )
-        self.tabs.addTab(self.processing_tab, "Process and View")
-
-
-        # Phasor and Decay tabs start disabled
         self.phasor_tab = PhasorPanel(viewer)
         self.tabs.addTab(self.phasor_tab, "Phasor")
-        self.tabs.setTabEnabled(1, False)
+        self.tabs.setTabEnabled(self.tabs.indexOf(self.phasor_tab), False)
 
-    
-        # from flopa.widgets.decay_panel import DecayTab
         # self.decay_tab = DecayPanel(viewer)
         # self.tabs.addTab(self.decay_tab, "Decay")
-        # self.tabs.setTabEnabled(2, False)
+        # self.tabs.setTabEnabled(self.tabs.indexOf(self.decay_tab), False)
 
-    def on_data_loaded(self, loaded_data):
-        """Callback when data is loaded via LoadViewPanel."""
-        self.data = loaded_data
-        # No need to enable generate button manually anymore
-        # Any other logic you want to run after data loading can go here
-        print("Data loaded:", self.data["intensity"].shape)
+        # --- Connect signals ---
+        self.processing_tab.reconstruction_finished.connect(self._on_reconstruction_finished)
+        self.view_tab.slice_changed.connect(self.phasor_tab.on_slice_changed)
 
-    def on_flim_image_generated(self, flim_image, intensity_slice, lifetime_slice):
-        # Called when user clicks "Generate FLIM Image" button after load/correction
-        self.flim_image = flim_image
-        # Now that FLIM image exists, enable downstream tabs
-        self.tabs.setTabEnabled(1, True)  # Phasor tab
-        #self.tabs.setTabEnabled(2, True)  # Decay tab
-        # Inform phasor/decay tabs about new image
-        #self.phasor_tab.set_flim_image(flim_image)
-        self.phasor_tab.update_data(intensity_slice, lifetime_slice)
-        #self.decay_tab.set_flim_image(flim_image)
-    
- 
+
+    @Slot(xr.Dataset)
+    def _on_reconstruction_finished(self, dataset: xr.Dataset):
+        """
+        This is the central handler slot for data.
+        It receives the complete reconstructed dataset and distributes it
+        to all interested consumer panels.
+        """        
+        # 1. Store the new dataset as the central state
+        self.reconstructed_dataset = dataset
+
+        # 2. Distribute the complete dataset to all consumer panels.
+        self.view_tab.update_data(dataset)
+        self.phasor_tab.update_data(dataset)
+        # self.decay_tab.update_data(dataset)
+
+        # 3. Enable/disable tabs based on the dataset's content
+        data_vars = dataset.data_vars
+        
+        has_phasor_data = "phasor_g" in data_vars  
+        self.tabs.setTabEnabled(self.tabs.indexOf(self.phasor_tab), has_phasor_data)
+
+        # has_decay_data = "tcspc_histogram" in data_vars
+        # self.tabs.setTabEnabled(self.tabs.indexOf(self.decay_tab), has_decay_data)
+
+
+    @Slot(np.ndarray, np.ndarray, np.ndarray, dict)
+    def _on_view_updated(self, flim_image, intensity_slice, lifetime_slice, slice_params):
+        """
+        Slot that is called whenever the user interacts with the FLIM view controls.
+        """
+        pass

@@ -1,6 +1,0 @@
-# Add your python dependencies here
-
--e .
-pytest
-black
-mypy
