@@ -105,7 +105,11 @@ class ImageReconstructor:
             tcspc_channels: int = 2 ** 15
             ):
                 
-                
+# TODO: Add sequence dimesnion to tcspc_histogram
+# TODO: Rename output dimension channel to detector
+# TODO: Rename partial_line_marker - it's nsync, not marker
+
+
                 """
                 Initialize an image reconstructor.
 

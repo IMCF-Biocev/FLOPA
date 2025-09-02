@@ -7,7 +7,7 @@ import numpy as np
 import xarray as xr
 from matplotlib import cm
 
-from flopa.io.ptuio.utils import create_FLIM_image
+from flopa.io.ptuio.utils import create_FLIM_image, sum_dataset, sum_hyperstack_dict
 
 
 class FlimViewPanel(QWidget):
@@ -122,15 +122,35 @@ class FlimViewPanel(QWidget):
             sequence_selector.setEnabled(not sum_sequences_check.isChecked())
             channel_selector.setEnabled(not sum_channels_check.isChecked())
 
-            final_intensity = self._get_active_slice(self.full_data_package.get('intensity'), selectors)
-            final_lifetime = self._get_active_slice(self.full_data_package.get('lifetime'), selectors)
-            
+            dims_to_sum = []
+            if selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
+            if selectors['sum_sequences'].isChecked(): dims_to_sum.append('sequence')
+            if selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
+
+            full_data_package_sum = sum_hyperstack_dict(self.full_data_package,dims_to_sum)
+
+            # final_intensity = self._get_active_slice(full_data_package_sum.get('intensity'), selectors)
+            # final_lifetime = self._get_active_slice(full_data_package_sum.get('lifetime'), selectors)
             final_slice_package = {
-                'intensity': final_intensity, 'lifetime': final_lifetime,
-                'phasor_g': self._get_active_slice(self.full_data_package.get('phasor_g'), selectors),
-                'phasor_s': self._get_active_slice(self.full_data_package.get('phasor_s'), selectors)
-            }
+                'intensity': self._get_active_slice(full_data_package_sum.get('intensity'), selectors),
+                'lifetime': self._get_active_slice(full_data_package_sum.get('lifetime'), selectors),
+                'phasor_g': self._get_active_slice(full_data_package_sum.get('phasor_g'), selectors),
+                'phasor_s': self._get_active_slice(full_data_package_sum.get('phasor_s'), selectors),
+            }                    
+
+            final_intensity = final_slice_package['intensity']
+            final_lifetime = final_slice_package['lifetime']
+
+            # final_intensity = self._get_active_slice(self.full_data_package.get('intensity'), selectors)
+            # final_lifetime = self._get_active_slice(self.full_data_package.get('lifetime'), selectors)
             
+            # final_slice_package = {
+            #     'intensity': final_intensity, 'lifetime': final_lifetime,
+            #     'phasor_g': self._get_active_slice(self.full_data_package.get('phasor_g'), selectors),
+            #     'phasor_s': self._get_active_slice(self.full_data_package.get('phasor_s'), selectors)
+            # }
+
+
             slice_params = {'frame': frame_selector.value(), 'sequence': sequence_selector.value(), 'channel': channel_selector.value()}
 
             if final_intensity is not None and final_lifetime is not None:
@@ -199,13 +219,19 @@ class FlimViewPanel(QWidget):
             
         active_slice = full_xarray_dataarray.isel(**selection_dict)
         
-        if dims_to_sum: # later use fun from Dalibor
-            if full_xarray_dataarray.name in ['mean_arrival_time', 'phasor_g', 'phasor_s']:
-                final_slice = active_slice.mean(dim=dims_to_sum) # to be weighted mean
-            else: # For photon_count
-                final_slice = active_slice.sum(dim=dims_to_sum)
-        else:
-            final_slice = active_slice
+        # if dims_to_sum: # later use fun from Dalibor
+        #     if full_xarray_dataarray.name in ['mean_arrival_time', 'phasor_g', 'phasor_s']:
+        #         final_slice = active_slice.mean(dim=dims_to_sum) # to be weighted mean
+        #     else: # For photon_count
+        #         final_slice = active_slice.sum(dim=dims_to_sum)
+        # else:
+        #     final_slice = active_slice
+
+        # if dims_to_sum:
+        #     final_slice = sum_dataset(active_slice,dims_to_sum)
+        # else:
+        #     final_slice = active_slice
+        final_slice = active_slice
 
         return final_slice.values
 
