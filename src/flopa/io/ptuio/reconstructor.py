@@ -135,12 +135,29 @@ class ImageReconstructor:
                 if not isinstance(config, ScanConfig):
                     raise TypeError("ImageReconstructor requires a ScanConfig object")   
                 self.config = config
-                self.shape = (
+
+                # ---- sequence/line mapping (per frame) ----
+                self.n_seq = len(self.config.line_accumulations)
+                self.total_accum = int(np.sum(self.config.line_accumulations))
+                self.total_lines = self.config.lines * self.total_accum
+
+                # e.g. for accum=[1,2,3] -> pattern [0,1,1,2,2,2]
+                _pattern = np.repeat(np.arange(self.n_seq), self.config.line_accumulations)
+
+                # For each raw line index in [0, total_lines):
+                #   - which sequence it belongs to
+                #   - which true line (0..lines-1)
+                self.line_to_sequence = np.tile(_pattern, self.config.lines).astype(np.int32)                 # shape: (total_lines,)
+                self.line_to_true_line = np.repeat(np.arange(self.config.lines), self.total_accum).astype(np.int32)  # shape: (total_lines,)
+
+                shape = (
                     config.frames,
-                    config.lines * config._total_accumulations,
+                    self.n_seq,
+                    self.config.lines,
                     config.pixels,
                     config.max_detector
                 )
+
                 self.omega = omega
                 self.active_detectors = set()
 
@@ -158,13 +175,13 @@ class ImageReconstructor:
                 # Initialize output arrays
                 self.tcspc_channels = tcspc_channels
                 if "arrival_sum" in self._required:
-                    self.arrival_sum = np.zeros(self.shape, dtype=np.float32)
+                    self.arrival_sum = np.zeros(shape, dtype=np.float32)
                 if "photon_count" in self._required:
-                    self.photon_count = np.zeros(self.shape, dtype=np.uint32)
+                    self.photon_count = np.zeros(shape, dtype=np.uint32)
                 if "phasor_sum" in self._required:
-                    self.phasor_sum = np.zeros(self.shape, dtype=np.complex64)
+                    self.phasor_sum = np.zeros(shape, dtype=np.complex64)
                 if "tcspc_hist" in self._required:
-                    self.tcspc_hist = np.zeros((self.config.frames, self.config.max_detector, tcspc_channels), dtype=np.uint64)  # existing shape logic
+                    self.tcspc_hist = np.zeros((self.config.frames, self.n_seq, self.config.max_detector, tcspc_channels), dtype=np.uint64)  # existing shape logic
 
                 # Rolling context
                 self._partial_line_start_nsync = None   # stores unmatched marker from previous chunk
@@ -206,7 +223,7 @@ class ImageReconstructor:
         # Extract line markers
         start_markers = get_markers(events, self.config.line_start_marker_channel)
         if len(start_markers) == 0:
-            # No line start markers → nothing to assemble this round
+            # No line start markers -> nothing to assemble this round
             return
 
         stop_markers = (
@@ -226,106 +243,55 @@ class ImageReconstructor:
             self._flush_final_line()
 
         data = {}
-        active_detectors = sorted(self.active_detectors)
-        detectors = max(active_detectors) + 1
-
-        # if "tcspc_histogram" in self.requested_outputs:
-        #     self.tcspc_hist = self.tcspc_hist[:,:detectors,:]
-        #     data["tcspc_histogram"] = (("frame","detector","tcspc_channel"),self.tcspc_hist)
+        if len(self.active_detectors) == 0:
+            detectors = 0
+        else:
+            detectors = max(self.active_detectors) + 1
 
         if "tcspc_histogram" in self.requested_outputs:
-            tcspc_histogram = np.zeros(shape = (
-                self.config.frames,
-                len(self.config.line_accumulations),
-                max(self.active_detectors) + 1,
-                self.tcspc_channels
-            ), dtype=np.uint64)
-            tcspc_histogram[:,0,:,:] = self.tcspc_hist[:,:detectors,:]
-            data["tcspc_histogram"] = (("frame","sequence","detector","tcspc_channel"),tcspc_histogram)
+            data["tcspc_histogram"] = (
+                ("frame", "sequence", "detector", "tcspc_channel"),
+                self.tcspc_hist[:, :, :detectors, :]
+            )
 
+        if "photon_count" in self.requested_outputs:
+            data["photon_count"] = (
+                ("frame", "sequence", "line", "pixel", "detector"),
+                self.photon_count[:, :, :, :, :detectors]
+            )
 
-        if "photon_count" in self._required:
-            photon_count = np.zeros(shape=(
-                self.config.frames,
-                len(self.config.line_accumulations),
-                self.config.lines,
-                self.config.pixels,
-                max(self.active_detectors) + 1
-            ), dtype = np.uint32)
-
-            pattern = np.repeat(np.arange(len(self.config.line_accumulations)), self.config.line_accumulations)
-
-            # Total pattern applied to all lines
-            sequence_pattern = np.tile(pattern, self.config.lines)  # shape: (total_lines,)
-
-            
-            lines = self.config.lines
-            pixels = self.config.pixels
-
-
-        if "arrival_sum" in self._required:
-            arrival_sum = np.zeros_like(photon_count, dtype = np.float32)
-
-        if "phasor_sum" in self._required:
-            phasor_sum = np.zeros_like(photon_count, dtype=np.complex64)
-
-        if "photon_count" in self._required:
-
-            for accu_idx in range(len(self.config.line_accumulations)):
-                seq_line_idx = np.where(sequence_pattern == accu_idx)[0]
-                accum = self.config.line_accumulations[accu_idx]
-                for f in range(self.config.frames):
-                    summed_PC = self._reshape_and_sum(self.photon_count, f, seq_line_idx, lines, accum, pixels, detectors)
-                    photon_count[f, accu_idx, :, :, :] = summed_PC
-                    if "arrival_sum" in self._required:
-                        summed_AS = self._reshape_and_sum(self.arrival_sum, f, seq_line_idx, lines, accum, pixels, detectors)
-                        arrival_sum[f, accu_idx, :, :, :] = summed_AS
-                    if "phasor_sum" in self._required:
-                        summed_PS = self._reshape_and_sum(self.phasor_sum, f, seq_line_idx, lines, accum, pixels, detectors)
-                        phasor_sum[f, accu_idx, :, :, :] = summed_PS
-
-        if "photon_count" in self.requested_outputs:                        
-            data["photon_count"] = (("frame", "sequence", "line", "pixel", "detector"), photon_count)
-                    
         if "mean_arrival_time" in self.requested_outputs:
             with np.errstate(divide='ignore', invalid='ignore'):
-                mean_arrival = np.true_divide(arrival_sum, photon_count, dtype=np.float32)
-                mean_arrival[photon_count == 0] = 0  # set empty pixels to 0
-            data["mean_arrival_time"] = (("frame", "sequence", "line", "pixel", "detector"), mean_arrival)
-        
+                mean_arrival = np.true_divide(self.arrival_sum, self.photon_count, dtype=np.float32)
+                mean_arrival[self.photon_count == 0] = np.nan
+            data["mean_arrival_time"] = (
+                ("frame", "sequence", "line", "pixel", "detector"),
+                mean_arrival[:, :, :, :, :detectors]
+            )
 
         if "phasor" in self.requested_outputs:
-
-            # Normalize phasor
             with np.errstate(divide='ignore', invalid='ignore'):
-                norm_phasor = np.true_divide(phasor_sum, photon_count, dtype=np.complex64)
-                # norm_phasor[photon_count == 0] = 0
-                norm_phasor[photon_count == 0] = np.nan + 1j * np.nan
+                norm_phasor = np.true_divide(self.phasor_sum, self.photon_count, dtype=np.complex64)
+                norm_phasor[self.photon_count == 0] = np.nan + 1j * np.nan
+            data["phasor_g"] = (
+                ("frame", "sequence", "line", "pixel", "detector"),
+                np.real(norm_phasor)[:, :, :, :, :detectors]
+            )
+            data["phasor_s"] = (
+                ("frame", "sequence", "line", "pixel", "detector"),
+                np.imag(norm_phasor)[:, :, :, :, :detectors]
+            )
 
-            g = np.real(norm_phasor)
-            s = np.imag(norm_phasor)
-            data["phasor_g"] = (("frame", "sequence", "line", "pixel", "detector"), g)
-            data["phasor_s"] = (("frame", "sequence", "line", "pixel", "detector"), s)
-
-        all_coords = {
-            "frame": np.arange(self.config.frames),
-            "sequence": np.arange(len(self.config.line_accumulations)),
-            "line": np.arange(self.config.lines),
-            "pixel": np.arange(self.config.pixels),
-            "detector": np.arange(detectors),
-            "tcspc_channel": np.arange(self.tcspc_channels),
+        coords = {
+            "frame": np.arange(self.config.frames).astype(np.uint32),
+            "sequence": np.arange(self.n_seq).astype(np.uint8),
+            "line": np.arange(self.config.lines).astype(np.uint32),
+            "pixel": np.arange(self.config.pixels).astype(np.uint32),
+            "detector": np.arange(detectors).astype(np.uint8),
+            "tcspc_channel": np.arange(self.tcspc_channels).astype(np.uint16),
         }
-
-        # Determine used dimensions
-        used_dims = set()
-        for data_array in data.values():
-            dims = data_array[0]  # First item in tuple is dims
-            used_dims.update(dims)
-
-        # Only keep relevant coords
-        coords = {k: v for k, v in all_coords.items() if k in used_dims}
-
         return xr.Dataset(data, coords=coords)
+
 
     def _resolve_dependencies(self):
         required = set()
@@ -348,23 +314,34 @@ class ImageReconstructor:
     def get_available_outputs(self):
         return list(self.requested_outputs)
 
+    # def _stretch_roi_mask(self, base_mask: np.ndarray) -> np.ndarray:
+    #     if base_mask.shape != (self.config.lines, self.config.pixels):
+    #         raise ValueError(f"Base ROI mask must have shape ({self.config.lines}, {self.config.pixels})")
+
+    #     # Expand to (frames, sequences, lines, pixels)
+    #     stretched_mask = np.zeros(
+    #         (self.config.frames,
+    #         self.config.lines * self.config._total_accumulations,
+    #         self.config.pixels),
+    #         dtype=bool
+    #     )
+
+    #     for f_idx in range(self.config.frames):
+    #         stretched_mask[f_idx,:,:] = np.repeat(base_mask, repeats=self.config._total_accumulations, axis=0)
+
+    #     return stretched_mask
+       
     def _stretch_roi_mask(self, base_mask: np.ndarray) -> np.ndarray:
         if base_mask.shape != (self.config.lines, self.config.pixels):
             raise ValueError(f"Base ROI mask must have shape ({self.config.lines}, {self.config.pixels})")
 
-        # Expand to (frames, sequences, lines, pixels)
-        stretched_mask = np.zeros(
-            (self.config.frames,
-            self.config.lines * self.config._total_accumulations,
-            self.config.pixels),
-            dtype=bool
-        )
+        # Broadcast to (frames, sequences, lines, pixels)
+        stretched = np.broadcast_to(
+            base_mask[None, None, :, :],
+            (self.config.frames, self.n_seq, self.config.lines, self.config.pixels)
+        ).copy()
+        return stretched
 
-        for f_idx in range(self.config.frames):
-            stretched_mask[f_idx,:,:] = np.repeat(base_mask, repeats=self.config._total_accumulations, axis=0)
-
-        return stretched_mask
-       
     def _build_line_segments(
         self,
         frame_markers: np.ndarray,
@@ -488,25 +465,43 @@ class ImageReconstructor:
 
         pixels = pixels[valid_pixels]
         frames = frames[valid_pixels]
-        lines = lines[valid_pixels]
+        raw_lines = lines[valid_pixels]           # <-- raw line indices within the frame
         channels = photons_in_segments["channel"][valid_pixels]
         dtimes = photons_in_segments["dtime"][valid_pixels]
-        phasors = np.exp(1j * self.omega * dtimes)
 
+        # Map raw line -> (sequence, true_line)
+        sequences = self.line_to_sequence[raw_lines]
+        true_lines = self.line_to_true_line[raw_lines]
+
+        # Optional ROI check with new layout
+        if self._roi_mask_stretched is not None:
+            in_roi = self._roi_mask_stretched[frames, sequences, true_lines, pixels]
+            if not np.any(in_roi):
+                return
+            mask = in_roi
+            pixels = pixels[mask]
+            frames = frames[mask]
+            sequences = sequences[mask]
+            true_lines = true_lines[mask]
+            channels = channels[mask]
+            dtimes = dtimes[mask]
+
+        # Accumulate
         if "arrival_sum" in self._required:
-            np.add.at(self.arrival_sum, (frames, lines, pixels, channels), dtimes)
+            np.add.at(self.arrival_sum, (frames, sequences, true_lines, pixels, channels), dtimes)
 
         if "photon_count" in self._required:
-            np.add.at(self.photon_count, (frames, lines, pixels, channels), 1)
+            np.add.at(self.photon_count, (frames, sequences, true_lines, pixels, channels), 1)
 
         if "phasor_sum" in self._required:
             phasors = np.exp(1j * self.omega * dtimes)
-            np.add.at(self.phasor_sum, (frames, lines, pixels, channels), phasors)
+            np.add.at(self.phasor_sum, (frames, sequences, true_lines, pixels, channels), phasors)
 
         if "tcspc_hist" in self._required:
-            np.add.at(self.tcspc_hist, (frames, channels, dtimes), 1)
+            np.add.at(self.tcspc_hist, (frames, sequences, channels, dtimes), 1)
 
-        pending_photons_mask = photons["nsync"] >= segment_ends[-1]            
+        # carry-over, active detector bookkeeping stays the same
+        pending_photons_mask = photons["nsync"] >= segment_ends[-1]
         self._pending_photons = photons[pending_photons_mask]
         self.active_detectors.update(np.unique(channels))
 

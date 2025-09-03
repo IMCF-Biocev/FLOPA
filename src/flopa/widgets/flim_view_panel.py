@@ -35,7 +35,7 @@ class FlimViewPanel(QWidget):
         tcspc_res_units = 'ch' if tcspc_res_ns == 1 else 'ns'
 
         self.full_data_package = {}
-        standard_order = ("frame", "sequence", "channel", "line", "pixel")
+        standard_order = ("frame", "sequence", "detector", "line", "pixel")
 
         if "photon_count" in dataset.data_vars:
             self.full_data_package['intensity'] = dataset.photon_count.transpose(*standard_order, missing_dims='ignore')
@@ -112,7 +112,7 @@ class FlimViewPanel(QWidget):
         final_layout.addWidget(slider_container.native)
 
         selectors = {
-            'frame': frame_selector, 'sequence': sequence_selector, 'channel': channel_selector,
+            'frame': frame_selector, 'sequence': sequence_selector, 'detector': channel_selector,
             'sum_frames': sum_frames_check, 'sum_sequences': sum_sequences_check, 'sum_channels': sum_channels_check
         }
 
@@ -125,7 +125,7 @@ class FlimViewPanel(QWidget):
             dims_to_sum = []
             if selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
             if selectors['sum_sequences'].isChecked(): dims_to_sum.append('sequence')
-            if selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
+            if selectors['sum_channels'].isChecked(): dims_to_sum.append('detector')
 
             full_data_package_sum = sum_hyperstack_dict(self.full_data_package,dims_to_sum)
 
@@ -151,7 +151,7 @@ class FlimViewPanel(QWidget):
             # }
 
 
-            slice_params = {'frame': frame_selector.value(), 'sequence': sequence_selector.value(), 'channel': channel_selector.value()}
+            slice_params = {'frame': frame_selector.value(), 'sequence': sequence_selector.value(), 'detector': channel_selector.value()}
 
             if final_intensity is not None and final_lifetime is not None:
                 lt_min, lt_max = lt_range_slider.value
@@ -210,12 +210,12 @@ class FlimViewPanel(QWidget):
         if not selectors['sum_sequences'].isChecked():
             selection_dict['sequence'] = selectors['sequence'].value()
         if not selectors['sum_channels'].isChecked():
-            selection_dict['channel'] = selectors['channel'].value()
+            selection_dict['detector'] = selectors['detector'].value()
             
         dims_to_sum = []
         if selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
         if selectors['sum_sequences'].isChecked(): dims_to_sum.append('sequence')
-        if selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
+        if selectors['sum_channels'].isChecked(): dims_to_sum.append('detector')
             
         active_slice = full_xarray_dataarray.isel(**selection_dict)
         
