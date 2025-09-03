@@ -106,8 +106,6 @@ class ImageReconstructor:
             ):
                 
 # TODO: Add sequence dimesnion to tcspc_histogram
-# TODO: Rename output dimension channel to detector
-# TODO: Rename partial_line_marker - it's nsync, not marker
 
 
                 """
@@ -169,7 +167,7 @@ class ImageReconstructor:
                     self.tcspc_hist = np.zeros((self.config.frames, self.config.max_detector, tcspc_channels), dtype=np.uint64)  # existing shape logic
 
                 # Rolling context
-                self._partial_line_marker = None   # stores unmatched marker from previous chunk
+                self._partial_line_start_nsync = None   # stores unmatched marker from previous chunk
                 self._current_line_idx = 0
                 self._current_frame_idx = 0               # current frame index
                 self._pending_photons = np.empty((0,), dtype=event_dtype)
@@ -224,16 +222,27 @@ class ImageReconstructor:
         self._assign_photons_to_segments(photons, line_segments)
 
     def finalize(self):
-        if self._partial_line_marker is not None:
+        if self._partial_line_start_nsync is not None:
             self._flush_final_line()
 
         data = {}
         active_detectors = sorted(self.active_detectors)
-        channels = max(active_detectors) + 1
+        detectors = max(active_detectors) + 1
+
+        # if "tcspc_histogram" in self.requested_outputs:
+        #     self.tcspc_hist = self.tcspc_hist[:,:detectors,:]
+        #     data["tcspc_histogram"] = (("frame","detector","tcspc_channel"),self.tcspc_hist)
 
         if "tcspc_histogram" in self.requested_outputs:
-            self.tcspc_hist = self.tcspc_hist[:,:channels,:]
-            data["tcspc_histogram"] = (("frame","channel","tcspc_channel"),self.tcspc_hist)
+            tcspc_histogram = np.zeros(shape = (
+                self.config.frames,
+                len(self.config.line_accumulations),
+                max(self.active_detectors) + 1,
+                self.tcspc_channels
+            ))
+            tcspc_histogram[:,0,:,:] = self.tcspc_hist[:,:detectors,:]
+            data["tcspc_histogram"] = (("frame","sequence","detector","tcspc_channel"),tcspc_histogram)
+
 
         if "photon_count" in self._required:
             photon_count = np.zeros(shape=(
@@ -266,23 +275,23 @@ class ImageReconstructor:
                 seq_line_idx = np.where(sequence_pattern == accu_idx)[0]
                 accum = self.config.line_accumulations[accu_idx]
                 for f in range(self.config.frames):
-                    summed_PC = self._reshape_and_sum(self.photon_count, f, seq_line_idx, lines, accum, pixels, channels)
+                    summed_PC = self._reshape_and_sum(self.photon_count, f, seq_line_idx, lines, accum, pixels, detectors)
                     photon_count[f, accu_idx, :, :, :] = summed_PC
                     if "arrival_sum" in self._required:
-                        summed_AS = self._reshape_and_sum(self.arrival_sum, f, seq_line_idx, lines, accum, pixels, channels)
+                        summed_AS = self._reshape_and_sum(self.arrival_sum, f, seq_line_idx, lines, accum, pixels, detectors)
                         arrival_sum[f, accu_idx, :, :, :] = summed_AS
                     if "phasor_sum" in self._required:
-                        summed_PS = self._reshape_and_sum(self.phasor_sum, f, seq_line_idx, lines, accum, pixels, channels)
+                        summed_PS = self._reshape_and_sum(self.phasor_sum, f, seq_line_idx, lines, accum, pixels, detectors)
                         phasor_sum[f, accu_idx, :, :, :] = summed_PS
 
         if "photon_count" in self.requested_outputs:                        
-            data["photon_count"] = (("frame", "sequence", "line", "pixel", "channel"), photon_count)
+            data["photon_count"] = (("frame", "sequence", "line", "pixel", "detector"), photon_count)
                     
         if "mean_arrival_time" in self.requested_outputs:
             with np.errstate(divide='ignore', invalid='ignore'):
                 mean_arrival = np.true_divide(arrival_sum, photon_count)
                 mean_arrival[photon_count == 0] = 0  # set empty pixels to 0
-            data["mean_arrival_time"] = (("frame", "sequence", "line", "pixel", "channel"), mean_arrival)
+            data["mean_arrival_time"] = (("frame", "sequence", "line", "pixel", "detector"), mean_arrival)
         
 
         if "phasor" in self.requested_outputs:
@@ -295,15 +304,15 @@ class ImageReconstructor:
 
             g = np.real(norm_phasor)
             s = np.imag(norm_phasor)
-            data["phasor_g"] = (("frame", "sequence", "line", "pixel", "channel"), g)
-            data["phasor_s"] = (("frame", "sequence", "line", "pixel", "channel"), s)
+            data["phasor_g"] = (("frame", "sequence", "line", "pixel", "detector"), g)
+            data["phasor_s"] = (("frame", "sequence", "line", "pixel", "detector"), s)
 
         all_coords = {
             "frame": np.arange(self.config.frames),
             "sequence": np.arange(len(self.config.line_accumulations)),
             "line": np.arange(self.config.lines),
             "pixel": np.arange(self.config.pixels),
-            "channel": np.arange(channels),
+            "detector": np.arange(detectors),
             "tcspc_channel": np.arange(self.tcspc_channels),
         }
 
@@ -370,11 +379,11 @@ class ImageReconstructor:
 
         self._frame_marker_nsyncs = np.append(self._frame_marker_nsyncs, frame_nsyncs, axis=0)
 
-        if self._partial_line_marker is not None:
-            start_nsyncs = np.insert(start_nsyncs, 0, self._partial_line_marker)
-            self._partial_line_marker = None
+        if self._partial_line_start_nsync is not None:
+            start_nsyncs = np.insert(start_nsyncs, 0, self._partial_line_start_nsync)
+            self._partial_line_start_nsync = None
             
-        self._partial_line_marker = start_nsyncs[-1]
+        self._partial_line_start_nsync = start_nsyncs[-1]
 
         start = start_nsyncs[:-1].astype(np.int64)
         stop = start + self.line_duration
@@ -509,15 +518,15 @@ class ImageReconstructor:
     def _flush_final_line(self):
 
         final_segment = np.empty(1,dtype=segment_dtype)
-        final_segment["start_nsync"] = self._partial_line_marker
-        final_segment["stop_nsync"] = self._partial_line_marker + self.line_duration
+        final_segment["start_nsync"] = self._partial_line_start_nsync
+        final_segment["stop_nsync"] = self._partial_line_start_nsync + self.line_duration
         final_segment["frame_idx"] = self._current_frame_idx
         final_segment["line_idx"] = self._current_line_idx
         final_segment["reversed"] = self.config.bidirectional and (self._current_line_idx % 2 == 1)
 
         self._assign_photons_to_segments(self._pending_photons, final_segment)
         self._pending_photons = np.empty((0,), dtype=self._pending_photons.dtype)
-        self._partial_line_marker = None
+        self._partial_line_start_nsync = None
 
     def _extract_markers(self, events, codes):
         return events[(events["special"] != 0) & np.isin(events["channel"], codes)]

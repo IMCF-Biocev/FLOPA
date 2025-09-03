@@ -101,7 +101,7 @@ def estimate_bidirectional_shift(reader: TTTRReader,
                 "frame" : np.arange(test_config.frames),
                 "line": np.arange(test_config.lines),
                 "pixel": np.arange(test_config.pixels),
-                "channel": np.arange(test_config.max_detector)
+                "detector": np.arange(test_config.max_detector)
             }
         )
 
@@ -111,7 +111,7 @@ def estimate_bidirectional_shift(reader: TTTRReader,
         #     "dim_1" : "line",
         #     "dim_2" : "pixel",
         #     "dim_3" : "channel"})
-        pc = pc.sum(dim = 'channel')
+        pc = pc.sum(dim = 'detector')
         pc = pc.isel(frame = 0)
         forward = pc[::2, :]
         backward = pc[1::2, :]
