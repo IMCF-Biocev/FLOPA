@@ -1,115 +1,106 @@
 # flopa/widgets/decay_panel.py
-from qtpy.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QMessageBox, QSpinBox, QFormLayout, QProgressBar,
-    QApplication, QPlainTextEdit
-)
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
-from flopa.widgets.utils.style import dark_plot, light_plot
-from flopa.processing.decay import calculate_decays_for_mask
 
+from qtpy.QtWidgets import (
+    QWidget, QVBoxLayout, QGroupBox, QPushButton, QCheckBox, QHBoxLayout, QMessageBox
+)
+from qtpy.QtCore import Slot
 import numpy as np
-import napari
-import itertools
-import matplotlib.pyplot as plt
+import xarray as xr
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-# flopa/widgets/decay_panel.py
-from qtpy.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QLabel, QPushButton,
-    QComboBox, QCheckBox, QMessageBox, QSpinBox, QFormLayout
-)
+from .utils.style import dark_plot, light_plot
 
 class DecayPanel(QWidget):
-    def __init__(self, viewer: napari.Viewer):
+    def __init__(self, viewer):
         super().__init__()
         self.viewer = viewer
-        
-        # Data sources needed for on-demand calculation
-        self.ptu_filepath = None
-        self.scan_config = None
-        
-        # This will store the result: {label_id: decay_curve_array}
-        self.last_calculated_decays = {}
+        self.dataset = None
+        self.last_plot_data = None
         self._init_ui()
+        self._plot_decay(message="No data loaded.")
 
     def _init_ui(self):
-        layout = QVBoxLayout(); self.setLayout(layout)
-        
-        calc_group = QGroupBox("1. Calculate Integrated Decays"); calc_layout = QFormLayout()
-        self.mask_combobox = QComboBox()
-        self.viewer.layers.events.connect(self._update_mask_combobox)
-        calc_layout.addRow("Select Mask Layer:", self.mask_combobox)
-        self.binning_spinbox = QSpinBox(); self.binning_spinbox.setRange(1, 256); self.binning_spinbox.setValue(4)
-        calc_layout.addRow("TCSPC Binning:", self.binning_spinbox)
-        self.btn_calculate_decay = QPushButton("Calculate Decays from PTU"); self.btn_calculate_decay.clicked.connect(self._on_calculate_decay_clicked)
-        calc_layout.addRow(self.btn_calculate_decay)
-        calc_group.setLayout(calc_layout)
-        layout.addWidget(calc_group)
-
-        plot_group = QGroupBox("2. Plotting Options")
-        plot_layout = QHBoxLayout(); plot_group.setLayout(plot_layout)
-        self.log_scale_checkbox = QCheckBox("Logarithmic Scale"); self.log_scale_checkbox.setChecked(True)
-        self.dark_mode_checkbox = QCheckBox("Use Dark Theme"); self.dark_mode_checkbox.setChecked(True)
-        self.log_scale_checkbox.stateChanged.connect(self._redraw_plot)
-        self.dark_mode_checkbox.stateChanged.connect(self._redraw_plot)
-        plot_layout.addWidget(self.log_scale_checkbox); plot_layout.addWidget(self.dark_mode_checkbox)
-        layout.addWidget(plot_group)
-
+        layout = QVBoxLayout(self)
+        controls_group = QGroupBox("Plot Options")
+        options_layout = QHBoxLayout(controls_group)
+        self.dark_mode_check = QCheckBox("Use Dark Theme"); self.dark_mode_check.setChecked(True)
+        self.dark_mode_check.toggled.connect(self._on_theme_changed)
+        options_layout.addWidget(self.dark_mode_check); options_layout.addStretch()
+        layout.addWidget(controls_group)
+        plot_group = QGroupBox("Decay Curve")
+        plot_layout = QVBoxLayout(plot_group)
         self.decay_figure = Figure(figsize=(5, 4)); self.decay_canvas = FigureCanvas(self.decay_figure)
-        self.decay_ax = self.decay_figure.add_subplot(111); self.decay_toolbar = NavigationToolbar(self.decay_canvas, self)
-        layout.addWidget(self.decay_toolbar); layout.addWidget(self.decay_canvas)
-        self._update_mask_combobox()
+        self.decay_ax = self.decay_figure.add_subplot(111)
+        plot_layout.addWidget(self.decay_canvas)
+        layout.addWidget(plot_group); layout.addStretch()
 
-    def update_source_info(self, ptu_filepath, scan_config):
-        self.ptu_filepath = ptu_filepath; self.scan_config = scan_config
-        self.btn_calculate_decay.setEnabled(ptu_filepath is not None and scan_config is not None)
+    @Slot(xr.Dataset)
+    def update_data(self, dataset: xr.Dataset):
+        self.dataset = dataset
+        if "tcspc_histogram" not in self.dataset.data_vars: self.clear_plot()
 
-    def _update_mask_combobox(self, event=None):
-        self.mask_combobox.clear()
-        self.mask_combobox.addItems([layer.name for layer in self.viewer.layers if isinstance(layer, napari.layers.Labels)])
-
-    def _on_calculate_decay_clicked(self):
-        if not self.ptu_filepath or not self.scan_config: return
-        mask_name = self.mask_combobox.currentText()
-        if not mask_name: QMessageBox.warning(self, "No Mask", "Please select a mask layer."); return
+    @Slot(dict)
+    def on_slice_changed(self, data_package: dict):
+        if not self.dataset or "tcspc_histogram" not in self.dataset.data_vars: return
         
-        mask_data = self.viewer.layers[mask_name].data
-        binning = self.binning_spinbox.value()
-        
-        self.btn_calculate_decay.setText("Calculating...")
-        QApplication.processEvents()
+        histogram = data_package.get('tcspc_histogram')
+        selectors = data_package.get('selectors')
+        if histogram is None or selectors is None: return
 
-        try:
-            # This is where the magic happens!
-            self.last_calculated_decays = calculate_decays_for_mask(
-                self.ptu_filepath, self.scan_config, mask_data, binning
-            )
-            self._redraw_plot()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to calculate decays:\n{e}")
-        finally:
-            self.btn_calculate_decay.setText("Calculate Decays from PTU")
+        selection_dict, dims_to_sum = {}, []
+        if 'frame' in histogram.dims and not selectors['sum_frames'].isChecked(): selection_dict['frame'] = selectors['frame'].value()
+        if 'channel' in histogram.dims and not selectors['sum_channels'].isChecked(): selection_dict['channel'] = selectors['channel'].value()
+        if 'frame' in histogram.dims and selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
+        if 'channel' in histogram.dims and selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
+            
+        sliced_hist = histogram.isel(**selection_dict)
+        final_decay_data = sliced_hist.sum(dim=dims_to_sum) if dims_to_sum else sliced_hist
 
-    def _redraw_plot(self):
-        self._plot_decay(self.last_calculated_decays)
+        instrument_params = self.dataset.attrs.get('instrument_params', {})
+        tcspc_res_s = instrument_params.get('MeasDesc_Resolution', 5e-12)
+        time_axis_ns = np.arange(histogram.sizes['tcspc_channel']) * tcspc_res_s * 1e9
 
-    def _plot_decay(self, decay_dict):
-        self.decay_ax.clear()
-        if self.dark_mode_checkbox.isChecked(): dark_plot(self.decay_ax, self.decay_figure)
-        else: light_plot(self.decay_ax, self.decay_figure)
-
-        if not decay_dict:
-            msg = "Calculate decays for a masked region to begin."
-            self.decay_ax.text(0.5, 0.5, msg, ha='center', va='center', transform=self.decay_ax.transAxes)
+        if 'channel' in final_decay_data.dims:
+            decay_curves, channel_labels = final_decay_data.values, final_decay_data.channel.values
         else:
-            color_cycle = itertools.cycle(plt.cm.tab10.colors)
-            for label_id, decay_curve in decay_dict.items():
-                self.decay_ax.plot(decay_curve, label=f"Label {label_id}", color=next(color_cycle))
-            self.decay_ax.legend()
+            decay_curves = [final_decay_data.values]
+            label = "Summed" if 'channel' in dims_to_sum else final_decay_data.channel.values.item()
+            channel_labels = [label]
         
-        if self.log_scale_checkbox.isChecked(): self.decay_ax.set_yscale('log')
-        self.decay_ax.set_xlabel(f"TCSPC Bin (Binned x{self.binning_spinbox.value()})")
-        self.decay_ax.set_ylabel("Photon Count"); self.decay_ax.set_title("Integrated Decay Curves")
-        self.decay_ax.grid(True, which='both', linestyle='--', alpha=0.5)
+        self._plot_decay(time_axis_ns, decay_curves, channel_labels)
+
+    def clear_plot(self):
+        self.last_plot_data = None
+        self._plot_decay(message="TCSPC Histogram not available.")
+        
+    def _on_theme_changed(self):
+        if self.last_plot_data: self._plot_decay(**self.last_plot_data)
+
+
+    def _plot_decay(self, time_axis=None, decay_curves=None, channel_labels=None, message=None):
+        
+        self.last_plot_data = {
+            "time_axis": time_axis,
+            "decay_curves": decay_curves,
+            "channel_labels": channel_labels,
+            "message": message
+        }
+        # ----------------------
+
+        self.decay_ax.clear()
+        
+        if self.dark_mode_check.isChecked(): dark_plot(self.decay_ax, self.decay_figure); text_color = 'white'
+        else: light_plot(self.decay_ax, self.decay_figure); text_color = 'black'
+        if message: self.decay_ax.text(0.5, 0.5, message, color=text_color, ha='center', va='center', transform=self.decay_ax.transAxes)
+        if time_axis is not None and decay_curves is not None:
+            for i, curve in enumerate(decay_curves):
+                self.decay_ax.semilogy(time_axis, curve, label=f'Channel {channel_labels[i]}')
+            if self.decay_ax.get_legend_handles_labels()[0]: self.decay_ax.legend()
+            valid_points = np.concatenate([c for c in decay_curves if c.ndim == 1]);
+            if valid_points.any(): self.decay_ax.set_ylim(bottom=max(0.5, valid_points[valid_points > 0].min() * 0.5))
+        self.decay_ax.set_title("Fluorescence Decay"); self.decay_ax.set_xlabel("Time (ns)"); self.decay_ax.set_ylabel("Photon Count (log scale)")
+        if self.decay_ax.get_legend():
+            if self.dark_mode_check.isChecked(): dark_plot(self.decay_ax, self.decay_figure)
+            else: light_plot(self.decay_ax, self.decay_figure)
         self.decay_canvas.draw_idle()

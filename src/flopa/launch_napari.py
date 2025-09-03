@@ -25,7 +25,7 @@ def main():
     viewer.window.add_dock_widget(
         flim_view_panel, 
         name="FLIM View Controls", 
-        area="left",
+        area="bottom",
     )
 
 

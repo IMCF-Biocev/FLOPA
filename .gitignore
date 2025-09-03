@@ -1,12 +1,13 @@
 test_data/
+
 tests/
+
+docs/notes/
+
 __pycache__/
 *.pyc
 .env
 .venv
-docs/notes/*
-
-# Packaging
 *.egg-info/
 dist/
 build/

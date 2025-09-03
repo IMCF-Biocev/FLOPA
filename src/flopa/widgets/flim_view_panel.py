@@ -11,7 +11,7 @@ from flopa.io.ptuio.utils import create_FLIM_image
 
 
 class FlimViewPanel(QWidget):
-    view_updated = Signal(np.ndarray, np.ndarray, np.ndarray, dict)
+    #view_updated = Signal(np.ndarray, np.ndarray, np.ndarray, dict)
     slice_changed = Signal(dict)
 
     def __init__(self, viewer):
@@ -44,21 +44,23 @@ class FlimViewPanel(QWidget):
         if "phasor_g" in dataset.data_vars:
             self.full_data_package['phasor_g'] = dataset.phasor_g.transpose(*standard_order, missing_dims='ignore')
             self.full_data_package['phasor_s'] = dataset.phasor_s.transpose(*standard_order, missing_dims='ignore')
+        if "tcspc_histogram" in dataset.data_vars:
+            self.full_data_package['tcspc_histogram'] = dataset.tcspc_histogram
 
         if not self.full_data_package:
             self.setVisible(False)
             QMessageBox.warning(self, "No Displayable Data", "The dataset contains no viewable data.")
             return
 
-        self.setVisible(True)
-        for layer_name in ['FLIM', 'Intensity', 'Lifetime']:
-            if layer_name in self.viewer.layers:
-                self.viewer.layers.remove(layer_name)
+
 
         has_intensity = 'intensity' in self.full_data_package
         has_lifetime = 'lifetime' in self.full_data_package
-
         if has_intensity or has_lifetime:
+            self.setVisible(True)
+            for layer_name in ['FLIM', 'Intensity', 'Lifetime']:
+                if layer_name in self.viewer.layers:
+                    self.viewer.layers.remove(layer_name)
             self._create_view_controls(has_intensity, has_lifetime, tcspc_res_units)
         else:
             self.setVisible(False)
@@ -116,96 +118,147 @@ class FlimViewPanel(QWidget):
             'sum_frames': sum_frames_check, 'sum_sequences': sum_sequences_check, 'sum_channels': sum_channels_check
         }
 
+        def _get_active_slice(full_xarray_dataarray, is_mean=False):
+            if full_xarray_dataarray is None: return None
+            selection_dict, dims_to_sum = {}, []
+            for dim in ['frame', 'sequence', 'channel']:
+                if dim in full_xarray_dataarray.dims:
+                    if selectors[f'sum_{dim}s'].isChecked(): dims_to_sum.append(dim)
+                    else: selection_dict[dim] = selectors[dim].value()
+            active_slice = full_xarray_dataarray.isel(**selection_dict)
+            if dims_to_sum:
+                return active_slice.mean(dim=dims_to_sum).values if is_mean else active_slice.sum(dim=dims_to_sum).values
+            return active_slice.values
 
         def update_view():
-            frame_selector.setEnabled(not sum_frames_check.isChecked())
-            sequence_selector.setEnabled(not sum_sequences_check.isChecked())
-            channel_selector.setEnabled(not sum_channels_check.isChecked())
+            frame_selector.setEnabled(not sum_frames_check.isChecked()); sequence_selector.setEnabled(not sum_sequences_check.isChecked()); channel_selector.setEnabled(not sum_channels_check.isChecked())
+            final_intensity = _get_active_slice(self.full_data_package.get('intensity'))
+            final_lifetime = _get_active_slice(self.full_data_package.get('lifetime'), is_mean=True)
 
-            final_intensity = self._get_active_slice(self.full_data_package.get('intensity'), selectors)
-            final_lifetime = self._get_active_slice(self.full_data_package.get('lifetime'), selectors)
-            
             final_slice_package = {
                 'intensity': final_intensity, 'lifetime': final_lifetime,
-                'phasor_g': self._get_active_slice(self.full_data_package.get('phasor_g'), selectors),
-                'phasor_s': self._get_active_slice(self.full_data_package.get('phasor_s'), selectors)
+                'phasor_g': _get_active_slice(self.full_data_package.get('phasor_g'), is_mean=True),
+                'phasor_s': _get_active_slice(self.full_data_package.get('phasor_s'), is_mean=True),
+                'tcspc_histogram': self.full_data_package.get('tcspc_histogram'), # Pass the full histogram
+                'selectors': selectors # Pass the current selector state
             }
             
-            slice_params = {'frame': frame_selector.value(), 'sequence': sequence_selector.value(), 'channel': channel_selector.value()}
-
             if final_intensity is not None and final_lifetime is not None:
-                lt_min, lt_max = lt_range_slider.value
-                int_min, int_max = int_range_slider.value
-                cmap_obj = cm.get_cmap(colormap_selector.value)
-
-                flim_rgb = create_FLIM_image(mean_photon_arrival_time=final_lifetime, intensity=final_intensity, colormap=cmap_obj, lt_min=lt_min, lt_max=lt_max, int_min=int_min, int_max=int_max)
-
+                lt_min, lt_max = lt_range_slider.value; int_min, int_max = int_range_slider.value
+                flim_rgb = create_FLIM_image(mean_photon_arrival_time=final_lifetime, intensity=final_intensity, colormap=cm.get_cmap(colormap_selector.value), lt_min=lt_min, lt_max=lt_max, int_min=int_min, int_max=int_max)
                 if 'FLIM' in self.viewer.layers: self.viewer.layers['FLIM'].data = flim_rgb
                 else: self.viewer.add_image(flim_rgb, name='FLIM', rgb=True)
-                self.view_updated.emit(flim_rgb, final_intensity, final_lifetime, slice_params)
-
             elif final_intensity is not None:
                 int_min, int_max = int_range_slider.value
-
                 if 'Intensity' in self.viewer.layers: self.viewer.layers['Intensity'].data = final_intensity; self.viewer.layers['Intensity'].contrast_limits = (int_min, int_max)
                 else: self.viewer.add_image(final_intensity, name='Intensity', contrast_limits=(int_min, int_max))
-
-            elif final_lifetime is not None:
-                lt_min, lt_max = lt_range_slider.value
-                cmap_name = colormap_selector.value
-                layer_name = 'Lifetime'
-                
-                if layer_name in self.viewer.layers: self.viewer.layers[layer_name].data = final_lifetime; self.viewer.layers[layer_name].contrast_limits = (lt_min, lt_max); self.viewer.layers[layer_name].colormap = cmap_name
-                else: self.viewer.add_image(final_lifetime, name=layer_name, contrast_limits=(lt_min, lt_max), colormap=cmap_name)
-
+            
             self.slice_changed.emit(final_slice_package)
 
-        # --- Connect all controls to the update function ---
-        for widget in slider_widgets:
-            widget.changed.connect(update_view)
-
-        frame_selector.valueChanged.connect(update_view)
-        sequence_selector.valueChanged.connect(update_view)
-        channel_selector.valueChanged.connect(update_view)
-        sum_frames_check.toggled.connect(update_view)
-        sum_sequences_check.toggled.connect(update_view)
-        sum_channels_check.toggled.connect(update_view)
+        for widget in slider_widgets: widget.changed.connect(update_view)
+        for widget in [frame_selector, sequence_selector, channel_selector]: widget.valueChanged.connect(update_view)
+        for widget in [sum_frames_check, sum_sequences_check, sum_channels_check]: widget.toggled.connect(update_view)
         
-        # --- Finalize the layout ---
-        layout = self.view_controls_container.layout()
+        layout = self.view_controls_container.layout();
         while layout.count():
             child = layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
-        
         layout.addWidget(final_container_widget)
         update_view()
 
+        # def update_view():
+        #     frame_selector.setEnabled(not sum_frames_check.isChecked())
+        #     sequence_selector.setEnabled(not sum_sequences_check.isChecked())
+        #     channel_selector.setEnabled(not sum_channels_check.isChecked())
 
-    def _get_active_slice(self, full_xarray_dataarray, selectors):
-        if full_xarray_dataarray is None: return None
+        #     final_intensity = self._get_active_slice(self.full_data_package.get('intensity'), selectors)
+        #     final_lifetime = self._get_active_slice(self.full_data_package.get('lifetime'), selectors)
+            
+        #     final_slice_package = {
+        #         'intensity': final_intensity, 'lifetime': final_lifetime,
+        #         'phasor_g': self._get_active_slice(self.full_data_package.get('phasor_g'), selectors),
+        #         'phasor_s': self._get_active_slice(self.full_data_package.get('phasor_s'), selectors)
+        #     }
 
-        selection_dict = {}
-        if not selectors['sum_frames'].isChecked():
-            selection_dict['frame'] = selectors['frame'].value()
-        if not selectors['sum_sequences'].isChecked():
-            selection_dict['sequence'] = selectors['sequence'].value()
-        if not selectors['sum_channels'].isChecked():
-            selection_dict['channel'] = selectors['channel'].value()
-            
-        dims_to_sum = []
-        if selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
-        if selectors['sum_sequences'].isChecked(): dims_to_sum.append('sequence')
-        if selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
-            
-        active_slice = full_xarray_dataarray.isel(**selection_dict)
+        #     final_intensity = get_display_slice(self.full_data_package.get('intensity'))
+        #     final_lifetime = get_display_slice(self.full_data_package.get('lifetime'), is_mean=True)    
+
+        #     slice_params = {'frame': frame_selector.value(), 'sequence': sequence_selector.value(), 'channel': channel_selector.value()}
+
+        #     if final_intensity is not None and final_lifetime is not None:
+        #         lt_min, lt_max = lt_range_slider.value
+        #         int_min, int_max = int_range_slider.value
+        #         cmap_obj = cm.get_cmap(colormap_selector.value)
+
+        #         flim_rgb = create_FLIM_image(mean_photon_arrival_time=final_lifetime, intensity=final_intensity, colormap=cmap_obj, lt_min=lt_min, lt_max=lt_max, int_min=int_min, int_max=int_max)
+
+        #         if 'FLIM' in self.viewer.layers: self.viewer.layers['FLIM'].data = flim_rgb
+        #         else: self.viewer.add_image(flim_rgb, name='FLIM', rgb=True)
+        #         #self.view_updated.emit(flim_rgb, final_intensity, final_lifetime, slice_params)
+
+        #     elif final_intensity is not None:
+        #         int_min, int_max = int_range_slider.value
+
+        #         if 'Intensity' in self.viewer.layers: self.viewer.layers['Intensity'].data = final_intensity; self.viewer.layers['Intensity'].contrast_limits = (int_min, int_max)
+        #         else: self.viewer.add_image(final_intensity, name='Intensity', contrast_limits=(int_min, int_max))
+
+        #     elif final_lifetime is not None:
+        #         lt_min, lt_max = lt_range_slider.value
+        #         cmap_name = colormap_selector.value
+        #         layer_name = 'Lifetime'
+                
+        #         if layer_name in self.viewer.layers: self.viewer.layers[layer_name].data = final_lifetime; self.viewer.layers[layer_name].contrast_limits = (lt_min, lt_max); self.viewer.layers[layer_name].colormap = cmap_name
+        #         else: self.viewer.add_image(final_lifetime, name=layer_name, contrast_limits=(lt_min, lt_max), colormap=cmap_name)
+
+        #     #self.slice_changed.emit(final_slice_package)
+        #     self.slice_changed.emit(self.selectors)
+
+        # # --- Connect all controls to the update function ---
+        # for widget in slider_widgets:
+        #     widget.changed.connect(update_view)
+
+        # frame_selector.valueChanged.connect(update_view)
+        # sequence_selector.valueChanged.connect(update_view)
+        # channel_selector.valueChanged.connect(update_view)
+        # sum_frames_check.toggled.connect(update_view)
+        # sum_sequences_check.toggled.connect(update_view)
+        # sum_channels_check.toggled.connect(update_view)
         
-        if dims_to_sum: # later use fun from Dalibor
-            if full_xarray_dataarray.name in ['mean_arrival_time', 'phasor_g', 'phasor_s']:
-                final_slice = active_slice.mean(dim=dims_to_sum) # to be weighted mean
-            else: # For photon_count
-                final_slice = active_slice.sum(dim=dims_to_sum)
-        else:
-            final_slice = active_slice
+        # # --- Finalize the layout ---
+        # layout = self.view_controls_container.layout()
+        # while layout.count():
+        #     child = layout.takeAt(0)
+        #     if child.widget(): child.widget().deleteLater()
+        
+        # layout.addWidget(final_container_widget)
+        # update_view()
 
-        return final_slice.values
+
+    # def _get_active_slice(self, full_xarray_dataarray, selectors):
+    #     if full_xarray_dataarray is None: return None
+
+    #     selection_dict = {}
+    #     if not selectors['sum_frames'].isChecked():
+    #         selection_dict['frame'] = selectors['frame'].value()
+    #     if not selectors['sum_sequences'].isChecked():
+    #         selection_dict['sequence'] = selectors['sequence'].value()
+    #     if not selectors['sum_channels'].isChecked():
+    #         selection_dict['channel'] = selectors['channel'].value()
+            
+    #     dims_to_sum = []
+    #     if selectors['sum_frames'].isChecked(): dims_to_sum.append('frame')
+    #     if selectors['sum_sequences'].isChecked(): dims_to_sum.append('sequence')
+    #     if selectors['sum_channels'].isChecked(): dims_to_sum.append('channel')
+            
+    #     active_slice = full_xarray_dataarray.isel(**selection_dict)
+        
+    #     if dims_to_sum: # later use fun from Dalibor
+    #         if full_xarray_dataarray.name in ['mean_arrival_time', 'phasor_g', 'phasor_s']:
+    #             final_slice = active_slice.mean(dim=dims_to_sum) # to be weighted mean
+    #         else: # For photon_count
+    #             final_slice = active_slice.sum(dim=dims_to_sum)
+    #     else:
+    #         final_slice = active_slice
+
+    #     return final_slice.values
 
