@@ -377,3 +377,123 @@ def shift_decay(arr, n):
     wrapped = np.roll(arr, -n) 
     return wrapped
 
+import xarray as xr
+
+def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
+    """
+    Collapse a dict of DataArrays along given dimensions, preserving structure and names.
+    
+    Keys expected:
+      - 'intensity' : summed directly
+      - 'lifetime'  : weighted avg by intensity; zeros where denom==0
+      - 'phasor_g'  : weighted avg by intensity; NaN where denom==0; ignore input NaNs
+      - 'phasor_s'  : same as phasor_g
+    
+    Parameters
+    ----------
+    data : dict of str -> xr.DataArray
+        Input data package (may contain a subset of keys).
+    dims : str or list of str
+        Dimension(s) to sum along.
+    
+    Returns
+    -------
+    dict of str -> xr.DataArray
+        Reduced data package, same keys as input, with names preserved.
+    """
+    if isinstance(dims, str):
+        dims = [dims]
+
+    out = {}
+
+    # intensity (photon_count)
+    if "intensity" in data:
+        intensity = data["intensity"]
+        photon_sum = intensity.sum(dim=[d for d in dims if d in intensity.dims], keepdims=True)
+        out["intensity"] = (
+            photon_sum.astype("uint64")
+            .assign_attrs(intensity.attrs)
+            .rename(intensity.name)  # preserve name
+        )
+    else:
+        photon_sum = None
+
+    # lifetime (mean_arrival_time)
+    if "lifetime" in data and photon_sum is not None:
+        lt = data["lifetime"]
+        denom = photon_sum if set(dims) & set(lt.dims) else intensity
+        numer = (lt * intensity).sum(dim=[d for d in dims if d in lt.dims], keepdims=True)
+        avg = numer / xr.where(denom > 0, denom, 0)
+        out["lifetime"] = (
+            avg.astype("float32")
+            .assign_attrs(lt.attrs)
+            .rename(lt.name)  # preserve name
+        )
+
+    # phasor_g / phasor_s
+    for var in ("phasor_g", "phasor_s"):
+        if var in data and photon_sum is not None:
+            pa = data[var]
+            denom = photon_sum if set(dims) & set(pa.dims) else intensity
+            numer = (pa.fillna(0) * intensity).sum(dim=[d for d in dims if d in pa.dims], keepdims=True)
+            avg = numer / xr.where(denom > 0, denom, np.nan)
+            out[var] = (
+                avg.astype("float32")
+                .assign_attrs(pa.attrs)
+                .rename(pa.name)  # preserve name
+            )
+
+    return out
+
+
+def sum_dataset(ds: xr.Dataset, dims):
+    """
+    Collapse a Dataset along given dimensions, preserving structure and dtypes.
+    
+    - photon_count, tcspc_histogram: summed directly (uint64 if present)
+    - mean_arrival_time: photon-count-weighted average, zeros if photon_sum == 0 (float32 if present)
+    - phasor_g, phasor_s: photon-count-weighted average, NaN if photon_sum == 0 (float32 if present)
+    
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Input dataset (may contain a subset of expected variables).
+    dims : str or list of str
+        Dimension(s) to sum along.
+    
+    Returns
+    -------
+    xr.Dataset
+        Reduced dataset with summed/weighted variables.
+        Reduced dims remain with length = 1.
+    """
+    if isinstance(dims, str):
+        dims = [dims]
+
+    out = {}
+
+    # Photon count is mandatory if we're doing weighted averages
+    if "photon_count" in ds:
+        photon_sum = ds["photon_count"].sum(dim=dims, keepdims=True)
+        out["photon_count"] = photon_sum.astype("uint64")
+    else:
+        photon_sum = None
+
+    # Mean arrival time: needs photon_count
+    if "mean_arrival_time" in ds and photon_sum is not None:
+        weighted_sum = (ds["mean_arrival_time"] * ds["photon_count"]).sum(dim=dims, keepdims=True)
+        avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, 0)
+        out["mean_arrival_time"] = avg.astype("float32")
+
+    # Phasors: need photon_count
+    for var in ["phasor_g", "phasor_s"]:
+        if var in ds and photon_sum is not None:
+            weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+            avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
+            out[var] = avg.where(photon_sum > 0).astype("float32")
+
+    # Histogram: direct sum
+    if "tcspc_histogram" in ds:
+        out["tcspc_histogram"] = ds["tcspc_histogram"].sum(dim=dims, keepdims=True).astype("uint64")
+
+    return xr.Dataset(out)
