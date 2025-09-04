@@ -98,10 +98,11 @@ def estimate_bidirectional_shift(reader: TTTRReader,
         pc = xr.DataArray(
             data=recon.photon_count.astype(np.float32),
             coords={
-                "frame" : np.arange(test_config.frames),
+                "frame" : 1,
+                "sequence": 1,
                 "line": np.arange(test_config.lines),
                 "pixel": np.arange(test_config.pixels),
-                "channel": np.arange(test_config.max_detector)
+                "detector": np.arange(test_config.max_detector)
             }
         )
 
@@ -111,8 +112,8 @@ def estimate_bidirectional_shift(reader: TTTRReader,
         #     "dim_1" : "line",
         #     "dim_2" : "pixel",
         #     "dim_3" : "channel"})
-        pc = pc.sum(dim = 'channel')
-        pc = pc.isel(frame = 0)
+        pc = pc.sum(dim = 'detector')
+        pc = pc.isel(frame = 0,sequence=0)
         forward = pc[::2, :]
         backward = pc[1::2, :]
         forward = forward.coarsen(line = line_bin).sum()
@@ -480,17 +481,27 @@ def sum_dataset(ds: xr.Dataset, dims):
         photon_sum = None
 
     # Mean arrival time: needs photon_count
-    if "mean_arrival_time" in ds and photon_sum is not None:
-        weighted_sum = (ds["mean_arrival_time"] * ds["photon_count"]).sum(dim=dims, keepdims=True)
-        avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, 0)
-        out["mean_arrival_time"] = avg.astype("float32")
+    # if "mean_arrival_time" in ds and photon_sum is not None:
+    #     # weighted_sum = (
+    #     #     ds["mean_arrival_time"].fillna(0) * ds["photon_count"]
+    #     # ).sum(dim=dims, keepdims=True)
+    #     # avg = xr.where(photon_sum > 0, weighted_sum / photon_sum, np.nan)
+    #     valid = ds["mean_arrival_time"].notnull()
+    #     weighted_sum = (ds["mean_arrival_time"].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+    #     denom   = ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+    #     avg = weighted_sum / denom
+    #     out["mean_arrival_time"] = avg.astype("float32")
 
-    # Phasors: need photon_count
-    for var in ["phasor_g", "phasor_s"]:
+    for var in ["mean_arrival_time", "phasor_g", "phasor_s"]:
         if var in ds and photon_sum is not None:
-            weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-            avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
-            out[var] = avg.where(photon_sum > 0).astype("float32")
+            # weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+            # avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
+            valid = ds[var].notnull()
+            avg = (
+                (ds[var].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+                / ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+            )
+            out[var] = xr.where(photon_sum > 0, avg, np.nan).astype("float32")
 
     # Histogram: direct sum
     if "tcspc_histogram" in ds:
