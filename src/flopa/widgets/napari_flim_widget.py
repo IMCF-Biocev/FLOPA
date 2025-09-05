@@ -36,8 +36,7 @@ class FlimWidget(QWidget):
 
         # --- Connect signals ---
         self.processing_tab.reconstruction_finished.connect(self._on_reconstruction_finished)
-        self.view_tab.slice_changed.connect(self.phasor_tab.on_slice_changed)
-        self.view_tab.slice_changed.connect(self.decay_tab.on_slice_changed)
+        self.view_tab.view_changed.connect(self.phasor_tab.on_view_changed)
 
     @Slot(xr.Dataset)
     def _on_reconstruction_finished(self, dataset: xr.Dataset):

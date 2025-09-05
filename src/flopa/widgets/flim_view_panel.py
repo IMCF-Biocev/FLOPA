@@ -15,7 +15,7 @@ from flopa.io.ptuio.utils import create_FLIM_image, sum_dataset
 from .histogram_slider import HistogramSlider
 
 class FlimViewPanel(QWidget):
-    slice_changed = Signal(dict)
+    view_changed = Signal(dict)
 
     def __init__(self, viewer):
         super().__init__()
@@ -45,7 +45,7 @@ class FlimViewPanel(QWidget):
             child = self.view_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
 
-        n_frames = self.dataset.sizes.get('frame', 1); n_sequences = self.dataset.sizes.get('sequence', 1); n_channels = self.dataset.sizes.get('channel', 1)
+        n_frames = self.dataset.sizes.get('frame', 1); n_sequences = self.dataset.sizes.get('sequence', 1); n_detectors = self.dataset.sizes.get('detector', 1)
         grid_layout = QGridLayout(); self.view_layout.addLayout(grid_layout)
         slice_group = QGroupBox(""); slice_layout = QFormLayout(slice_group)
         frame_selector = QSpinBox(); frame_selector.setRange(0, max(0, n_frames - 1))
@@ -54,9 +54,9 @@ class FlimViewPanel(QWidget):
         sequence_selector = QSpinBox(); sequence_selector.setRange(0, max(0, n_sequences - 1))
         sum_sequences_check = QCheckBox("Sum All"); sum_sequences_check.setEnabled(n_sequences > 1)
         hbox_s = QHBoxLayout(); hbox_s.addWidget(sequence_selector); hbox_s.addWidget(sum_sequences_check); slice_layout.addRow("Sequence:", hbox_s)
-        channel_selector = QSpinBox(); channel_selector.setRange(0, max(0, n_channels - 1))
-        sum_channels_check = QCheckBox("Sum All"); sum_channels_check.setEnabled(n_channels > 1)
-        hbox_c = QHBoxLayout(); hbox_c.addWidget(channel_selector); hbox_c.addWidget(sum_channels_check); slice_layout.addRow("Detector:", hbox_c)
+        detector_selector = QSpinBox(); detector_selector.setRange(0, max(0, n_detectors - 1))
+        sum_detectors_check = QCheckBox("Sum All"); sum_detectors_check.setEnabled(n_detectors > 1)
+        hbox_c = QHBoxLayout(); hbox_c.addWidget(detector_selector); hbox_c.addWidget(sum_detectors_check); slice_layout.addRow("Detector:", hbox_c)
         # grid_layout.addWidget(slice_group, 0, 0)
 
         # intensity_group = QGroupBox("Intensity"); intensity_layout = QVBoxLayout(intensity_group)
@@ -106,13 +106,13 @@ class FlimViewPanel(QWidget):
         intensity_group.setEnabled(has_intensity)
         lifetime_group.setEnabled(has_lifetime)
 
-        self.selectors = {'frame': frame_selector, 'sequence': sequence_selector, 'channel': channel_selector, 'sum_frames': sum_frames_check, 'sum_sequences': sum_sequences_check, 'sum_channels': sum_channels_check}
+        self.selectors = {'frame': frame_selector, 'sequence': sequence_selector, 'detector': detector_selector, 'sum_frames': sum_frames_check, 'sum_sequences': sum_sequences_check, 'sum_detectors': sum_detectors_check}
 
         def update_data_slice():
             """SLOWER function: Re-slices/sums data and updates histograms."""
             try:
                 selection_dict, dims_to_sum = {}, []
-                for dim in ['frame', 'sequence', 'channel']:
+                for dim in ['frame', 'sequence', 'detector']:
                     if dim in self.dataset.dims and self.selectors[f'sum_{dim}s'].isChecked(): dims_to_sum.append(dim)
                     elif dim in self.dataset.dims: selection_dict[dim] = self.selectors[dim].value()
                 
@@ -131,7 +131,7 @@ class FlimViewPanel(QWidget):
                 if self._cached_lifetime is not None: self.lifetime_slider.update_data(self._cached_lifetime)
             
                 update_display(create_new_layers=True) # Force creation of new layers
-                self.slice_changed.emit(self.selectors)
+                self.view_changed.emit(self.selectors)
             except Exception: traceback.print_exc()
 
         def update_display(create_new_layers=False):
@@ -204,9 +204,9 @@ class FlimViewPanel(QWidget):
             update_display()
 
         # --- Corrected Wiring ---
-        for selector in [frame_selector, sequence_selector, channel_selector]:
+        for selector in [frame_selector, sequence_selector, detector_selector]:
             selector.valueChanged.connect(update_data_slice)
-        for checkbox in [sum_frames_check, sum_sequences_check, sum_channels_check]:
+        for checkbox in [sum_frames_check, sum_sequences_check, sum_detectors_check]:
             checkbox.toggled.connect(update_data_slice)
             
         self.intensity_slider.slider.changed.connect(update_display)
