@@ -1,4 +1,6 @@
 import numpy as np
+from numpy.typing import NDArray
+
 import xarray as xr
 
 from .reader import TTTRReader
@@ -197,32 +199,15 @@ def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow,
     return LT_rgb * intensity_normalized[..., np.newaxis]
 
 
-# def smooth_weighted(array,count,size: int = 3):
-#       # array - 2D array to be smoothed, phasor coordinates or lifetime
-#       # count - used for weighting, must be of same size as array
 
+# def smooth_weighted(array, count, size: int = 3):
 
-#       kernel = np.ones((size, size), dtype=np.float32)
+def smooth_weighted(
+    array: NDArray[np.floating],
+    count: NDArray[np.integer],
+    size: int = 3
+) -> tuple[NDArray[np.float32], NDArray[np.uint32]]:
 
-#       # Set invalid phasors to 0
-#       valid = np.isfinite(array) & (count > 0)
-#       array_weighted = np.zeros_like(array, dtype=np.float32)
-#       array_weighted[valid] = array[valid] * count[valid]
-#       count_weighted = np.zeros_like(count, dtype=np.float32)
-#       count_weighted[valid] = count[valid]
-
-#       # Convolve
-#       num = convolve2d(array_weighted, kernel, mode='same')
-#       den = convolve2d(count_weighted, kernel, mode='same')
-
-#       # Normalize
-#       array_smoothed = np.full_like(array, np.nan)
-#       mask = den > 0
-#       array_smoothed[mask] = num[mask] / den[mask]
-
-#       return array_smoothed, den
-
-def smooth_weighted(array, count, size: int = 3):
     """
     Apply weighted 2D smoothing to an array using a square convolution kernel.
 
@@ -265,6 +250,9 @@ def smooth_weighted(array, count, size: int = 3):
 
     
     """
+    # Safety first
+    array = np.asarray(array)
+    count = np.asarray(count)
 
     # Sanity checks
     if array.ndim != 2 or count.ndim != 2:
@@ -290,8 +278,7 @@ def smooth_weighted(array, count, size: int = 3):
     array_smoothed = np.full_like(array, np.nan, dtype=np.float32)
     mask = count_smoothed > 0
     array_smoothed[mask] = num[mask] / count_smoothed[mask]
-    count_smoothed = np.array(count_smoothed)
-    count_smoothed = count_smoothed.astype(np.uint32)
+    count_smoothed = np.asarray(count_smoothed, dtype=np.uint32)
 
     return array_smoothed, count_smoothed
 
@@ -312,29 +299,6 @@ def get_marker_distribution(events: np.ndarray) -> Dict[int, int]:
 
 
 # --- Phasor functions ---
-
-
-# def smooth_phasor(phasor,count,size: int = 3):
-#       kernel = np.ones((size, size), dtype=np.float32)
-
-#       # Set invalid phasors to 0
-#       valid = np.isfinite(phasor) & (count > 0)
-#       phasor_weighted = np.zeros_like(phasor, dtype=np.complex64)
-#       phasor_weighted[valid] = phasor[valid] * count[valid]
-#       count_weighted = np.zeros_like(count, dtype=np.float32)
-#       count_weighted[valid] = count[valid]
-
-#       # Convolve
-#       num = convolve2d(phasor_weighted.real, kernel, mode='same') + \
-#             1j * convolve2d(phasor_weighted.imag, kernel, mode='same')
-#       den = convolve2d(count_weighted, kernel, mode='same')
-
-#       # Normalize
-#       phasor_smoothed = np.full_like(phasor, np.nan + 1j * np.nan)
-#       mask = den > 0
-#       phasor_smoothed[mask] = num[mask] / den[mask]
-
-#       return phasor_smoothed
 
 
 def get_phasor_from_decay(
@@ -480,137 +444,72 @@ def shift_decay(arr, n):
 
 import xarray as xr
 
-def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
-    """
-    Collapse a dict of DataArrays along given dimensions, preserving structure and names.
-    
-    Keys expected:
-      - 'intensity' : summed directly
-      - 'lifetime'  : weighted avg by intensity; zeros where denom==0
-      - 'phasor_g'  : weighted avg by intensity; NaN where denom==0; ignore input NaNs
-      - 'phasor_s'  : same as phasor_g
-    
-    Parameters
-    ----------
-    data : dict of str -> xr.DataArray
-        Input data package (may contain a subset of keys).
-    dims : str or list of str
-        Dimension(s) to sum along.
-    
-    Returns
-    -------
-    dict of str -> xr.DataArray
-        Reduced data package, same keys as input, with names preserved.
-    """
-    if isinstance(dims, str):
-        dims = [dims]
-
-    out = {}
-
-    # intensity (photon_count)
-    if "intensity" in data:
-        intensity = data["intensity"]
-        photon_sum = intensity.sum(dim=[d for d in dims if d in intensity.dims], keepdims=True)
-        out["intensity"] = (
-            photon_sum.astype("uint64")
-            .assign_attrs(intensity.attrs)
-            .rename(intensity.name)  # preserve name
-        )
-    else:
-        photon_sum = None
-
-    # lifetime (mean_arrival_time)
-    if "lifetime" in data and photon_sum is not None:
-        lt = data["lifetime"]
-        denom = photon_sum if set(dims) & set(lt.dims) else intensity
-        numer = (lt * intensity).sum(dim=[d for d in dims if d in lt.dims], keepdims=True)
-        avg = numer / xr.where(denom > 0, denom, 0)
-        out["lifetime"] = (
-            avg.astype("float32")
-            .assign_attrs(lt.attrs)
-            .rename(lt.name)  # preserve name
-        )
-
-    # phasor_g / phasor_s
-    for var in ("phasor_g", "phasor_s"):
-        if var in data and photon_sum is not None:
-            pa = data[var]
-            denom = photon_sum if set(dims) & set(pa.dims) else intensity
-            numer = (pa.fillna(0) * intensity).sum(dim=[d for d in dims if d in pa.dims], keepdims=True)
-            avg = numer / xr.where(denom > 0, denom, np.nan)
-            out[var] = (
-                avg.astype("float32")
-                .assign_attrs(pa.attrs)
-                .rename(pa.name)  # preserve name
-            )
-
-    return out
-
-
-# def sum_dataset(ds: xr.Dataset, dims):
+# def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
 #     """
-#     Collapse a Dataset along given dimensions, preserving structure and dtypes.
+#     Collapse a dict of DataArrays along given dimensions, preserving structure and names.
     
-#     - photon_count, tcspc_histogram: summed directly (uint64 if present)
-#     - mean_arrival_time: photon-count-weighted average, zeros if photon_sum == 0 (float32 if present)
-#     - phasor_g, phasor_s: photon-count-weighted average, NaN if photon_sum == 0 (float32 if present)
+#     Keys expected:
+#       - 'intensity' : summed directly
+#       - 'lifetime'  : weighted avg by intensity; zeros where denom==0
+#       - 'phasor_g'  : weighted avg by intensity; NaN where denom==0; ignore input NaNs
+#       - 'phasor_s'  : same as phasor_g
     
 #     Parameters
 #     ----------
-#     ds : xr.Dataset
-#         Input dataset (may contain a subset of expected variables).
+#     data : dict of str -> xr.DataArray
+#         Input data package (may contain a subset of keys).
 #     dims : str or list of str
 #         Dimension(s) to sum along.
     
 #     Returns
 #     -------
-#     xr.Dataset
-#         Reduced dataset with summed/weighted variables.
-#         Reduced dims remain with length = 1.
+#     dict of str -> xr.DataArray
+#         Reduced data package, same keys as input, with names preserved.
 #     """
 #     if isinstance(dims, str):
 #         dims = [dims]
 
 #     out = {}
 
-#     # Photon count is mandatory if we're doing weighted averages
-#     if "photon_count" in ds:
-#         photon_sum = ds["photon_count"].sum(dim=dims, keepdims=True)
-#         out["photon_count"] = photon_sum.astype("uint64")
+#     # intensity (photon_count)
+#     if "intensity" in data:
+#         intensity = data["intensity"]
+#         photon_sum = intensity.sum(dim=[d for d in dims if d in intensity.dims], keepdims=True)
+#         out["intensity"] = (
+#             photon_sum.astype("uint64")
+#             .assign_attrs(intensity.attrs)
+#             .rename(intensity.name)  # preserve name
+#         )
 #     else:
 #         photon_sum = None
 
-#     # Mean arrival time: needs photon_count
-#     # if "mean_arrival_time" in ds and photon_sum is not None:
-#     #     # weighted_sum = (
-#     #     #     ds["mean_arrival_time"].fillna(0) * ds["photon_count"]
-#     #     # ).sum(dim=dims, keepdims=True)
-#     #     # avg = xr.where(photon_sum > 0, weighted_sum / photon_sum, np.nan)
-#     #     valid = ds["mean_arrival_time"].notnull()
-#     #     weighted_sum = (ds["mean_arrival_time"].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-#     #     denom   = ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
-#     #     avg = weighted_sum / denom
-#     #     out["mean_arrival_time"] = avg.astype("float32")
+#     # lifetime (mean_arrival_time)
+#     if "lifetime" in data and photon_sum is not None:
+#         lt = data["lifetime"]
+#         denom = photon_sum if set(dims) & set(lt.dims) else intensity
+#         numer = (lt * intensity).sum(dim=[d for d in dims if d in lt.dims], keepdims=True)
+#         avg = numer / xr.where(denom > 0, denom, 0)
+#         out["lifetime"] = (
+#             avg.astype("float32")
+#             .assign_attrs(lt.attrs)
+#             .rename(lt.name)  # preserve name
+#         )
 
-#     for var in ["mean_arrival_time", "phasor_g", "phasor_s"]:
-#         if var in ds and photon_sum is not None:
-#             # weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-#             # avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
-#             valid = ds[var].notnull()
-#             avg = (
-#                 (ds[var].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-#                 / ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+#     # phasor_g / phasor_s
+#     for var in ("phasor_g", "phasor_s"):
+#         if var in data and photon_sum is not None:
+#             pa = data[var]
+#             denom = photon_sum if set(dims) & set(pa.dims) else intensity
+#             numer = (pa.fillna(0) * intensity).sum(dim=[d for d in dims if d in pa.dims], keepdims=True)
+#             avg = numer / xr.where(denom > 0, denom, np.nan)
+#             out[var] = (
+#                 avg.astype("float32")
+#                 .assign_attrs(pa.attrs)
+#                 .rename(pa.name)  # preserve name
 #             )
-#             out[var] = xr.where(photon_sum > 0, avg, np.nan).astype("float32")
 
-#     # Histogram: direct sum
-#     if "tcspc_histogram" in ds:
-#         out["tcspc_histogram"] = ds["tcspc_histogram"].sum(dim=dims, keepdims=True).astype("uint64")
+#     return out
 
-#     return xr.Dataset(out)
-
-import numpy as np
-import xarray as xr
 
 def aggregate_dataset(ds: xr.Dataset, dims):
     """
