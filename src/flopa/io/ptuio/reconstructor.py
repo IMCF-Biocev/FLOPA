@@ -339,7 +339,11 @@ class ImageReconstructor:
         stretched = np.broadcast_to(
             base_mask[None, None, :, :],
             (self.config.frames, self.n_seq, self.config.lines, self.config.pixels)
+            # base_mask[None, :, :],
+            # (self.config.frames, self.config.lines, self.config.pixels)
+            
         ).copy()
+        stretched = stretched.astype(np.bool)
         return stretched
 
     def _build_line_segments(
@@ -459,9 +463,9 @@ class ImageReconstructor:
         if np.count_nonzero(valid_pixels) == 0:
             return
         
-        if self._roi_mask_stretched is not None:
-            in_roi = self._roi_mask_stretched[frames,lines,pixels]
-            valid_pixels = valid_pixels & in_roi
+        # if self._roi_mask_stretched is not None:
+        #     in_roi = self._roi_mask_stretched[frames,lines,pixels]
+        #     valid_pixels = valid_pixels & in_roi
 
         pixels = pixels[valid_pixels]
         frames = frames[valid_pixels]
@@ -478,13 +482,12 @@ class ImageReconstructor:
             in_roi = self._roi_mask_stretched[frames, sequences, true_lines, pixels]
             if not np.any(in_roi):
                 return
-            mask = in_roi
-            pixels = pixels[mask]
-            frames = frames[mask]
-            sequences = sequences[mask]
-            true_lines = true_lines[mask]
-            channels = channels[mask]
-            dtimes = dtimes[mask]
+            pixels = pixels[in_roi]
+            frames = frames[in_roi]
+            sequences = sequences[in_roi]
+            true_lines = true_lines[in_roi]
+            channels = channels[in_roi]
+            dtimes = dtimes[in_roi]
 
         # Accumulate
         if "arrival_sum" in self._required:

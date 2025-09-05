@@ -197,6 +197,106 @@ def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow,
     return LT_rgb * intensity_normalized[..., np.newaxis]
 
 
+# def smooth_weighted(array,count,size: int = 3):
+#       # array - 2D array to be smoothed, phasor coordinates or lifetime
+#       # count - used for weighting, must be of same size as array
+
+
+#       kernel = np.ones((size, size), dtype=np.float32)
+
+#       # Set invalid phasors to 0
+#       valid = np.isfinite(array) & (count > 0)
+#       array_weighted = np.zeros_like(array, dtype=np.float32)
+#       array_weighted[valid] = array[valid] * count[valid]
+#       count_weighted = np.zeros_like(count, dtype=np.float32)
+#       count_weighted[valid] = count[valid]
+
+#       # Convolve
+#       num = convolve2d(array_weighted, kernel, mode='same')
+#       den = convolve2d(count_weighted, kernel, mode='same')
+
+#       # Normalize
+#       array_smoothed = np.full_like(array, np.nan)
+#       mask = den > 0
+#       array_smoothed[mask] = num[mask] / den[mask]
+
+#       return array_smoothed, den
+
+def smooth_weighted(array, count, size: int = 3):
+    """
+    Apply weighted 2D smoothing to an array using a square convolution kernel.
+
+    The function smooths a 2D array (e.g., phasor coordinates or lifetime data) 
+    with a uniform kernel while weighting values by a corresponding count matrix. 
+    Invalid entries (NaN, Inf, or locations with nonpositive count) are excluded 
+    from the smoothing.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        2D array of values to be smoothed. Must have the same shape as `count`.
+    count : np.ndarray
+        2D array of weights (e.g., photon counts). Must be the same shape as `array`.
+    size : int, optional
+        Size of the square convolution kernel. Must be a positive integer. 
+        Default is 3 (3×3 kernel).
+
+    Returns
+    -------
+    array_smoothed : np.ndarray
+        2D array of the same shape as `array`, containing smoothed values. 
+        Entries where the kernel had no valid contributions are set to NaN.
+    count_smoothed : np.ndarray
+        2D array of the same shape, representing the weighted denominator 
+        (effective counts) after convolution.
+
+    Raises
+    ------
+    AssertionError
+        If `array` and `count` are not the same shape.
+    ValueError
+        If `size` is not a positive integer or if `array`/`count` are not 2D.
+
+    Notes
+    -----
+    - This function uses a uniform kernel (`np.ones`) for convolution. 
+    - Normalization ensures the result is a weighted average rather than 
+      an unscaled sum.
+
+    
+    """
+
+    # Sanity checks
+    if array.ndim != 2 or count.ndim != 2:
+        raise ValueError("array and count must both be 2D arrays")
+    assert array.shape == count.shape, "array and count must have the same shape"
+    if not (isinstance(size, int) and size > 0):
+        raise ValueError("size must be a positive integer")
+
+    kernel = np.ones((size, size), dtype=np.float32)
+
+    # Mask invalid entries
+    valid = np.isfinite(array) & (count > 0)
+
+    # Weighted arrays using np.where (avoids full zero arrays)
+    array_weighted = np.where(valid, array * count, 0).astype(np.float32)
+    count_valid = np.where(valid, count, 0).astype(np.float32)
+
+    # Convolve
+    num = convolve2d(array_weighted, kernel, mode='same')
+    count_smoothed = convolve2d(count_valid, kernel, mode='same')
+
+    # Normalize
+    array_smoothed = np.full_like(array, np.nan, dtype=np.float32)
+    mask = count_smoothed > 0
+    array_smoothed[mask] = num[mask] / count_smoothed[mask]
+    count_smoothed = np.array(count_smoothed)
+    count_smoothed = count_smoothed.astype(np.uint32)
+
+    return array_smoothed, count_smoothed
+
+
+
 # --- Marker Helpers ---
 
 def marker_events(events: np.ndarray) -> np.ndarray:
@@ -214,27 +314,27 @@ def get_marker_distribution(events: np.ndarray) -> Dict[int, int]:
 # --- Phasor functions ---
 
 
-def smooth_phasor(phasor,count,size: int = 3):
-      kernel = np.ones((size, size), dtype=np.float32)
+# def smooth_phasor(phasor,count,size: int = 3):
+#       kernel = np.ones((size, size), dtype=np.float32)
 
-      # Set invalid phasors to 0
-      valid = np.isfinite(phasor) & (count > 0)
-      phasor_weighted = np.zeros_like(phasor, dtype=np.complex64)
-      phasor_weighted[valid] = phasor[valid] * count[valid]
-      count_weighted = np.zeros_like(count, dtype=np.float32)
-      count_weighted[valid] = count[valid]
+#       # Set invalid phasors to 0
+#       valid = np.isfinite(phasor) & (count > 0)
+#       phasor_weighted = np.zeros_like(phasor, dtype=np.complex64)
+#       phasor_weighted[valid] = phasor[valid] * count[valid]
+#       count_weighted = np.zeros_like(count, dtype=np.float32)
+#       count_weighted[valid] = count[valid]
 
-      # Convolve
-      num = convolve2d(phasor_weighted.real, kernel, mode='same') + \
-            1j * convolve2d(phasor_weighted.imag, kernel, mode='same')
-      den = convolve2d(count_weighted, kernel, mode='same')
+#       # Convolve
+#       num = convolve2d(phasor_weighted.real, kernel, mode='same') + \
+#             1j * convolve2d(phasor_weighted.imag, kernel, mode='same')
+#       den = convolve2d(count_weighted, kernel, mode='same')
 
-      # Normalize
-      phasor_smoothed = np.full_like(phasor, np.nan + 1j * np.nan)
-      mask = den > 0
-      phasor_smoothed[mask] = num[mask] / den[mask]
+#       # Normalize
+#       phasor_smoothed = np.full_like(phasor, np.nan + 1j * np.nan)
+#       mask = den > 0
+#       phasor_smoothed[mask] = num[mask] / den[mask]
 
-      return phasor_smoothed
+#       return phasor_smoothed
 
 
 def get_phasor_from_decay(
@@ -447,64 +547,125 @@ def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
     return out
 
 
-def sum_dataset(ds: xr.Dataset, dims):
+# def sum_dataset(ds: xr.Dataset, dims):
+#     """
+#     Collapse a Dataset along given dimensions, preserving structure and dtypes.
+    
+#     - photon_count, tcspc_histogram: summed directly (uint64 if present)
+#     - mean_arrival_time: photon-count-weighted average, zeros if photon_sum == 0 (float32 if present)
+#     - phasor_g, phasor_s: photon-count-weighted average, NaN if photon_sum == 0 (float32 if present)
+    
+#     Parameters
+#     ----------
+#     ds : xr.Dataset
+#         Input dataset (may contain a subset of expected variables).
+#     dims : str or list of str
+#         Dimension(s) to sum along.
+    
+#     Returns
+#     -------
+#     xr.Dataset
+#         Reduced dataset with summed/weighted variables.
+#         Reduced dims remain with length = 1.
+#     """
+#     if isinstance(dims, str):
+#         dims = [dims]
+
+#     out = {}
+
+#     # Photon count is mandatory if we're doing weighted averages
+#     if "photon_count" in ds:
+#         photon_sum = ds["photon_count"].sum(dim=dims, keepdims=True)
+#         out["photon_count"] = photon_sum.astype("uint64")
+#     else:
+#         photon_sum = None
+
+#     # Mean arrival time: needs photon_count
+#     # if "mean_arrival_time" in ds and photon_sum is not None:
+#     #     # weighted_sum = (
+#     #     #     ds["mean_arrival_time"].fillna(0) * ds["photon_count"]
+#     #     # ).sum(dim=dims, keepdims=True)
+#     #     # avg = xr.where(photon_sum > 0, weighted_sum / photon_sum, np.nan)
+#     #     valid = ds["mean_arrival_time"].notnull()
+#     #     weighted_sum = (ds["mean_arrival_time"].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+#     #     denom   = ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+#     #     avg = weighted_sum / denom
+#     #     out["mean_arrival_time"] = avg.astype("float32")
+
+#     for var in ["mean_arrival_time", "phasor_g", "phasor_s"]:
+#         if var in ds and photon_sum is not None:
+#             # weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+#             # avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
+#             valid = ds[var].notnull()
+#             avg = (
+#                 (ds[var].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+#                 / ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+#             )
+#             out[var] = xr.where(photon_sum > 0, avg, np.nan).astype("float32")
+
+#     # Histogram: direct sum
+#     if "tcspc_histogram" in ds:
+#         out["tcspc_histogram"] = ds["tcspc_histogram"].sum(dim=dims, keepdims=True).astype("uint64")
+
+#     return xr.Dataset(out)
+
+import numpy as np
+import xarray as xr
+
+def aggregate_dataset(ds: xr.Dataset, dims):
     """
-    Collapse a Dataset along given dimensions, preserving structure and dtypes.
-    
+    Aggregates a Dataset along given dimensions, preserving structure, dtypes,
+    and coordinates (aggregated dimensions are kept with length=1). Doesn't collapse along given dimension.
+
     - photon_count, tcspc_histogram: summed directly (uint64 if present)
-    - mean_arrival_time: photon-count-weighted average, zeros if photon_sum == 0 (float32 if present)
+    - mean_arrival_time: photon-count-weighted average, NaN if photon_sum == 0 (float32 if present)
     - phasor_g, phasor_s: photon-count-weighted average, NaN if photon_sum == 0 (float32 if present)
-    
-    Parameters
-    ----------
-    ds : xr.Dataset
-        Input dataset (may contain a subset of expected variables).
-    dims : str or list of str
-        Dimension(s) to sum along.
-    
-    Returns
-    -------
-    xr.Dataset
-        Reduced dataset with summed/weighted variables.
-        Reduced dims remain with length = 1.
     """
     if isinstance(dims, str):
         dims = [dims]
 
+    # Optional sanity check
+    missing = [d for d in dims if d not in ds.dims]
+    if missing:
+        raise ValueError(f"Requested dims not in dataset: {missing}")
+
     out = {}
 
-    # Photon count is mandatory if we're doing weighted averages
+    # Photon count (needed for weighted averages)
+    photon_sum = None
     if "photon_count" in ds:
         photon_sum = ds["photon_count"].sum(dim=dims, keepdims=True)
         out["photon_count"] = photon_sum.astype("uint64")
-    else:
-        photon_sum = None
 
-    # Mean arrival time: needs photon_count
-    # if "mean_arrival_time" in ds and photon_sum is not None:
-    #     # weighted_sum = (
-    #     #     ds["mean_arrival_time"].fillna(0) * ds["photon_count"]
-    #     # ).sum(dim=dims, keepdims=True)
-    #     # avg = xr.where(photon_sum > 0, weighted_sum / photon_sum, np.nan)
-    #     valid = ds["mean_arrival_time"].notnull()
-    #     weighted_sum = (ds["mean_arrival_time"].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-    #     denom   = ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
-    #     avg = weighted_sum / denom
-    #     out["mean_arrival_time"] = avg.astype("float32")
-
+    # Weighted averages
     for var in ["mean_arrival_time", "phasor_g", "phasor_s"]:
         if var in ds and photon_sum is not None:
-            # weighted_sum = (ds[var].fillna(0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-            # avg = weighted_sum / xr.where(photon_sum > 0, photon_sum, np.nan)
             valid = ds[var].notnull()
-            avg = (
-                (ds[var].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
-                / ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
-            )
+            num = (ds[var].where(valid, 0) * ds["photon_count"]).sum(dim=dims, keepdims=True)
+            den = ds["photon_count"].where(valid, 0).sum(dim=dims, keepdims=True)
+            avg = num / den
             out[var] = xr.where(photon_sum > 0, avg, np.nan).astype("float32")
 
-    # Histogram: direct sum
+    # Direct sum variables
     if "tcspc_histogram" in ds:
         out["tcspc_histogram"] = ds["tcspc_histogram"].sum(dim=dims, keepdims=True).astype("uint64")
 
-    return xr.Dataset(out)
+    out_ds = xr.Dataset(out)
+
+    # Preserve coords: reduce along summed dims with a length-1 slice (NOT index 0)
+    coord_ds = ds.coords.to_dataset()
+    indexers = {d: slice(0, 1) for d in dims if d in coord_ds.dims}
+    coord_ds = coord_ds.isel(indexers)
+
+    # Ensure each reduced dimension still has a dimension coordinate
+    for d in dims:
+        if d in ds.dims and d not in coord_ds:
+            if d in ds.coords:
+                coord_ds[d] = ds[d].isel({d: slice(0, 1)})
+            else:
+                coord_ds[d] = xr.DataArray(np.arange(1), dims=(d,))
+
+    # Merge reduced coords back; keep variable dims (which already include length-1 dims)
+    out_ds = xr.merge([out_ds, coord_ds], compat="override")
+
+    return out_ds
