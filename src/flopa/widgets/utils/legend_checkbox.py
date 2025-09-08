@@ -1,0 +1,76 @@
+# flopa/widgets/utils/legend_checkbox.py
+
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QCheckBox, QFrame
+from qtpy.QtGui import QPalette, QColor
+import numpy as np
+
+class LegendCheckBox(QWidget):
+    """
+    A custom widget that combines a QCheckBox with a colored square
+    to act as an interactive legend item.
+    """
+    def __init__(self, text="", color="black", parent=None):
+        super().__init__(parent)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        # The colored square
+        self.color_swatch = QFrame()
+        self.color_swatch.setFixedSize(12, 12)
+        # self.color_swatch.setFrameShape(QFrame.StyledPanel)
+        self.color_swatch.setStyleSheet("border: 1px solid gray;")
+
+        self.set_color(color)
+        
+        # The actual checkbox
+        self.checkbox = QCheckBox(text)
+
+        layout.addWidget(self.color_swatch)
+        layout.addWidget(self.checkbox)
+        layout.addStretch()
+        
+    def set_color(self, color):
+        """Sets the background color of the swatch."""
+        palette = self.color_swatch.palette()
+
+        # if hasattr(color, 'shape'): # A simple way to check for numpy array
+        #     # Convert float (0-1) to int (0-255) and create a QColor
+        #     r, g, b, a = [int(c * 255) for c in color]
+        #     q_color = QColor(r, g, b, a)
+        # else:
+        #     # If it's already a string or QColor, it will work directly
+        #     q_color = QColor(color)
+
+        # palette.setColor(QPalette.Background, q_color)
+        # self.color_swatch.setAutoFillBackground(True)
+        # self.color_swatch.setPalette(palette)
+
+        if isinstance(color, (tuple, list, np.ndarray)):
+            # Handle Matplotlib's (R, G, B, A) float format
+            r, g, b, *a = color
+            hex_color = "#{:02x}{:02x}{:02x}".format(int(r*255), int(g*255), int(b*255))
+        else:
+            # Handle string names ('red') or existing hex codes ('#FF0000')
+            q_color = QColor(color)
+            hex_color = q_color.name()
+
+        # 2. Apply the color using a stylesheet. This is more forceful
+        #    and will override the default napari theme for this widget.
+        self.color_swatch.setStyleSheet(
+            f"background-color: {hex_color};"
+            "border: 1px solid gray;" # Keep the border
+        )
+        # ----------------------------------------------
+
+
+
+        
+    def __getattr__(self, name):
+        """
+        Pass-through method to make this widget behave like a QCheckBox.
+        This allows us to call .setChecked(), .isChecked(), and connect to
+        its .toggled signal directly on the LegendCheckBox instance.
+        """
+        return getattr(self.checkbox, name)

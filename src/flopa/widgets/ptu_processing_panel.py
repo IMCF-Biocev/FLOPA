@@ -7,6 +7,7 @@ from qtpy.QtWidgets import (
     QRadioButton, QButtonGroup, QSizePolicy, QComboBox
 )
 from qtpy.QtCore import Qt, QSize, Signal
+from qtpy.QtCore import QThreadPool
 from qtpy.QtGui import QFont, QIcon
 from pathlib import Path
 import traceback
@@ -20,6 +21,7 @@ from flopa.io.loader import read_ptu_file, get_markers, format_ptu_header
 from flopa.io.ptuio.reconstructor import ScanConfig
 from flopa.io.ptuio.utils import estimate_bidirectional_shift
 from flopa.widgets.utils.bidir_shift_plot import plot_bidirectional_shift
+from .utils.threading import Worker, ThreadSafeLogger
 
 
 
@@ -33,6 +35,8 @@ class PtuProcessingPanel(QWidget):
 
     def __init__(self, viewer):
         super().__init__()
+        self.threadpool = QThreadPool()
+
         self.viewer = viewer
         self.ptu_data = None  
         self.ptu_filepath = None
@@ -271,10 +275,10 @@ class PtuProcessingPanel(QWidget):
             QMessageBox.warning(self, "No Data", "Please load a PTU file first."); return
         self.log_text_edit.clear(); self.reconstruct_btn.setEnabled(False)
         self.log_text_edit.appendPlainText("Starting reconstruction..."); QApplication.processEvents()
-        try:
-            accumulations = tuple([spin.value() for spin in self.accu_spinboxes])
+        
+        accumulations = tuple([spin.value() for spin in self.accu_spinboxes])
 
-            scan_config = ScanConfig(
+        scan_config = ScanConfig(
                 lines=self.lines_spin.value(), 
                 pixels=self.pixels_spin.value(), 
                 frames=self.frames_spin.value(), 
@@ -284,31 +288,57 @@ class PtuProcessingPanel(QWidget):
                 max_detector=self.max_detector_spin.value()
             )
 
-            selected_output = self.output_combo.currentData()
-            outputs_to_generate = [selected_output]
-            
-            logger = ProgressLogger(mode='qt')
-            logger.connect(lambda msg: self.log_text_edit.appendPlainText(msg))
-            
-            reconstructed_data = reconstruct_ptu_to_dataset(
-                ptu_data=self.ptu_data,
-                scan_config=scan_config,
-                outputs=outputs_to_generate,
-                tcspc_channels_override=self.tcspc_bins_spin.value(),
-                logger=logger  
-            )
+        selected_output = self.output_combo.currentData()
+        outputs_to_generate = [selected_output]
+        tcspc_override = self.tcspc_bins_spin.value()
 
-            reconstructed_data.attrs['instrument_params'] = {
-                'tcspc_bins': self.tcspc_bins_spin.value(),
-                'MeasDesc_Resolution': self.ptu_data['header'].get("MeasDesc_Resolution"),
-                'TTResult_SyncRate': self.ptu_data['header'].get("TTResult_SyncRate")
-            }
-            reconstructed_data.attrs['scan_config'] = scan_config.to_dict()
+        self.logger = ProgressLogger(mode='qt')
+        self.logger.connect(self.log_text_edit.appendPlainText)
 
-            self.reconstruction_finished.emit(reconstructed_data)
+        worker = Worker(
+            reconstruct_ptu_to_dataset,
+            ptu_data=self.ptu_data,
+            scan_config=scan_config,
+            outputs=outputs_to_generate,
+            tcspc_channels_override=tcspc_override,
+            logger=self.logger # Pass the thread-safe logger
+        )
 
-        except Exception as e:
-            tb_str = "".join(traceback.format_tb(e.__traceback__)); error_msg = f"--- ERROR ---\n{e}\n{tb_str}"
-            self.log_text_edit.appendPlainText(error_msg); QMessageBox.critical(self, "Reconstruction Error", f"An error occurred:\n{e}")
-        finally:
-            self.reconstruct_btn.setEnabled(True)
+        self.logger = ThreadSafeLogger()
+        self.logger.log_updated.connect(self.log_text_edit.appendPlainText)
+
+        # --- 4. Connect the worker's signals to handler methods ---
+        worker.signals.result.connect(lambda ds: self._on_reconstruction_result(ds, scan_config))
+        worker.signals.finished.connect(self._on_reconstruction_finished)
+        worker.signals.error.connect(self._on_reconstruction_error)
+        
+        # --- 5. Execute the worker on the thread pool ---
+        self.threadpool.start(worker)
+
+
+
+    def _on_reconstruction_result(self, dataset, scan_config):
+        """This slot is called when the worker thread successfully finishes."""
+        self.log_text_edit.appendPlainText("Reconstruction successful. Broadcasting result...")
+        
+        instrument_params = self.ptu_data['constants'].copy()
+        instrument_params['tcspc_bins'] = self.tcspc_bins_spin.value()
+        dataset.attrs['instrument_params'] = instrument_params
+        dataset.attrs['scan_config'] = scan_config.to_dict()
+        dataset.attrs['source_filename'] = self.ptu_filepath.name
+        # Emit the final signal to the main widget
+        self.reconstruction_finished.emit(dataset)
+        
+    def _on_reconstruction_finished(self):
+        """This slot is called when the worker thread is done (success or fail)."""
+        # Re-enable the UI
+        self.reconstruct_btn.setEnabled(True)
+        self.reconstruct_btn.setText("Reconstruct Image")
+        print("Reconstruction thread finished.")
+
+    def _on_reconstruction_error(self, error_tuple):
+        """This slot is called if the worker thread raises an exception."""
+        exctype, value, tb = error_tuple
+        error_msg = f"--- THREAD ERROR ---\n{tb}"
+        self.log_text_edit.appendPlainText(error_msg)
+        QMessageBox.critical(self, "Reconstruction Error", f"An error occurred in the background thread:\n{value}")

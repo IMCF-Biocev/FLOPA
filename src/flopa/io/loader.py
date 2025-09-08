@@ -1,6 +1,8 @@
 from .ptuio.reader import TTTRReader
 from .ptuio.decoder import T3OverflowCorrector
 from .ptuio.utils import estimate_tcspc_bins, marker_events, get_marker_distribution
+from flopa.processing.logger import ProgressLogger
+
 import numpy as np
 
 def format_ptu_header(header_tags, constants, full_header=False):
@@ -25,7 +27,8 @@ def format_ptu_header(header_tags, constants, full_header=False):
 
         "--- Key Parameters ---",
         f"Repetition Rate:   {constants['repetition_rate']:.2e} Hz",
-        f"TCSPC Resolution:  {constants['tcspc_resolution']:.2e} s",
+        f"TCSPC Resolution:  {constants['tcspc_resolution_ns']:.2e}",
+        f"Resolution Unit:   {constants['resolution_unit']}",
         f"TCSPC Bins:        {constants['tcspc_bins']}",
         f"Wrap Around:       {constants['wrap']}",
         f"Omega:             {constants['omega']:.4e} rad/s",
@@ -49,31 +52,47 @@ def format_ptu_header(header_tags, constants, full_header=False):
 
 
 
-def read_ptu_file(path, verbose=False, header=True) -> dict:
-    """
-    Reads a PTU file and extracts header, constants, and the reader object.
-    """
-    reader = TTTRReader(path)
+# In flopa/io/loader.py
 
-    # --- Useful constants ---
+def read_ptu_file(path, header=True, logger: ProgressLogger = None) -> dict:
+    """
+    Reads a PTU file and creates a standardized dictionary of instrument constants.
+
+    This function reads the header, applies sensible defaults for missing
+    critical tags, and calculates useful derived values.
+    """
+    if logger is None:
+        logger = ProgressLogger(mode='print')
+
+    logger.log(f"Reading PTU file: {path}")
+    reader = TTTRReader(path)
     header_tags = reader.header.tags
-    wrap = header_tags.get("TTResultFormat_WrapAround", 1024) # needed here?
+
+    # --- 1. Read primary values from header with robust defaults ---
     repetition_rate = header_tags.get("TTResult_SyncRate", 40e6)
-    tcspc_resolution = header_tags.get("MeasDesc_Resolution", 1)
+    
+    # Default TCSPC resolution: 1 ns (equivalent to 1/1e9 s)
+    tcspc_resolution = header_tags.get("MeasDesc_Resolution", 1 / 1e9)
+    tcspc_resolution_ns = tcspc_resolution * 1e9
+    resolution_unit = 'ch' if tcspc_resolution_ns == 1.0 else 'ns'
     tcspc_bins = estimate_tcspc_bins(header_tags, buffer=0)
+    
+    wrap = header_tags.get("TTResultFormat_WrapAround", 1024)
     omega = 2 * np.pi * repetition_rate * tcspc_resolution
 
+    # --- 3. Assemble the final, standardized constants dictionary ---
     constants = {
-        "wrap": wrap,
         "repetition_rate": repetition_rate,
         "tcspc_resolution": tcspc_resolution,
+        "tcspc_resolution_ns": tcspc_resolution_ns,
+        "resolution_unit": resolution_unit,
         "tcspc_bins": tcspc_bins,
+        "wrap": wrap,
         "omega": omega
     }
 
-    if verbose:
-        summary_text = format_ptu_header(header_tags, constants, full_header=header)
-        print(summary_text)
+    summary_text = format_ptu_header(header_tags, constants, full_header=header)
+    logger.log(summary_text)
 
     return {
         "reader": reader,

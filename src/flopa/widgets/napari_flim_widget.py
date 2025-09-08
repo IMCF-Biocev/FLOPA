@@ -37,6 +37,7 @@ class FlimWidget(QWidget):
         # --- Connect signals ---
         self.processing_tab.reconstruction_finished.connect(self._on_reconstruction_finished)
         self.view_tab.view_changed.connect(self.phasor_tab.on_view_changed)
+        self.decay_tab.decay_shift_changed.connect(self._on_decay_shift_changed)
 
     @Slot(xr.Dataset)
     def _on_reconstruction_finished(self, dataset: xr.Dataset):
@@ -69,3 +70,25 @@ class FlimWidget(QWidget):
     #     Slot that is called whenever the user interacts with the FLIM view controls.
     #     """
     #     pass
+
+    @Slot(int)
+    def _on_decay_shift_changed(self, shift_value: int):
+        """
+        Called when the user changes the shift value in the DecayPanel.
+        This method updates the central state and enables/disables the
+        phasor panel's calibration option.
+        """        
+        # Enable the phasor's shift calibration option only if the shift is non-zero
+        is_shift_active = (shift_value != 0)
+        self.phasor_tab.cal_by_shift_radio.setEnabled(is_shift_active)
+        
+        # If the shift is deactivated, ensure the phasor panel doesn't stay on that mode
+        if not is_shift_active and self.phasor_tab.cal_by_shift_radio.isChecked():
+            self.phasor_tab.cal_by_factor_radio.setChecked(True)
+
+        # Store the current shift value in the dataset attributes so the
+        # phasor panel can access it for calculations.
+        if self.reconstructed_dataset is not None:
+            if 'instrument_params' not in self.reconstructed_dataset.attrs:
+                self.reconstructed_dataset.attrs['instrument_params'] = {}
+            self.reconstructed_dataset.attrs['instrument_params']['current_decay_shift'] = shift_value

@@ -352,8 +352,9 @@ def draw_unitary_circle(ax: Axes, sync_rate, tau_max: int = None, tick_length=0.
         period_ns = 1e9 / sync_rate
         tau_max = int(np.ceil(period_ns / 2))
         
-    taus_ns = np.arange(1, tau_max + 1)
-    
+    # taus_ns = np.arange(1, tau_max + 1)
+    ticks = np.arange(1, tau_max + 1)
+    taus_ns = ticks[(ticks <= 8) | ((ticks > 8) & (ticks % 2 == 0))]
 
     center = np.array([0.5, 0])
     radius = 0.5
@@ -380,7 +381,7 @@ def draw_unitary_circle(ax: Axes, sync_rate, tau_max: int = None, tick_length=0.
         p2 = p + (tick_length / 2) * v_unit
         ax.plot([p1[0], p2[0]], [p1[1], p2[1]], '-', color=color, lw=1)
         label_pos = p + (tick_length * 1.2) * v_unit
-        ax.text(label_pos[0], label_pos[1], f'{tau_ns} ns', fontsize=8,
+        ax.text(label_pos[0], label_pos[1], f'{tau_ns}', fontsize=8,
                 ha='center', va='center', color=label_color)
 
     # Clean formatting
@@ -442,7 +443,6 @@ def shift_decay(arr, n):
     wrapped = np.roll(arr, -n) 
     return wrapped
 
-import xarray as xr
 
 # def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
 #     """
