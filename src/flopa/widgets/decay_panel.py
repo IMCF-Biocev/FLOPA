@@ -1,8 +1,9 @@
 # flopa/widgets/decay_panel.py
 
+import traceback
 from qtpy.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QPushButton, QCheckBox, QHBoxLayout, QMessageBox,
-    QScrollArea, QFrame, QGridLayout, QSpinBox, QFormLayout
+    QWidget, QVBoxLayout, QGroupBox, QPushButton, QCheckBox, QHBoxLayout, QMessageBox, QFileDialog,
+    QScrollArea, QFrame, QGridLayout, QSpinBox, QFormLayout, QLabel, QComboBox
 )
 from qtpy.QtCore import Slot, Qt, Signal
 import numpy as np
@@ -12,11 +13,13 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 from functools import partial
 import itertools
+from pathlib import Path
 
 from .utils.style import dark_plot, light_plot
 from flopa.io.ptuio.utils import aggregate_dataset
 from .utils.legend_checkbox import LegendCheckBox
 from flopa.io.ptuio.utils import shift_decay
+from .utils.exporter import export_decay_data
 
 
 class DecayPanel(QWidget):
@@ -111,6 +114,18 @@ class DecayPanel(QWidget):
         self.dark_mode_check = QCheckBox("Use Dark Theme"); self.dark_mode_check.setChecked(True)
         self.dark_mode_check.toggled.connect(self._on_theme_changed)
         options_layout.addWidget(self.dark_mode_check); options_layout.addStretch()
+
+        options_layout.addWidget(QLabel(""))
+        
+        self.export_combo = QComboBox()
+        self.export_combo.addItem("Plot (.png)", "png")
+        self.export_combo.addItem("Data (.csv)", "csv")
+        options_layout.addWidget(self.export_combo)
+        
+        self.btn_export = QPushButton("Save...")
+        self.btn_export.clicked.connect(self._on_export)
+        options_layout.addWidget(self.btn_export)
+
         layout.addWidget(options_group)
 
 
@@ -285,3 +300,60 @@ class DecayPanel(QWidget):
         """Unchecks all visibility checkboxes."""
         for checkbox in self.plotted_lines.keys():
             checkbox.setChecked(False)
+
+    def _on_export(self):
+        """Handles exporting the plot or the currently displayed decay data."""
+        if not hasattr(self, 'last_plot_data') or self.last_plot_data is None:
+            QMessageBox.warning(self, "No Data", "Please plot a decay curve first."); return
+
+        export_format = self.export_combo.currentData()
+        
+        if export_format == "png":
+            save_path, _ = QFileDialog.getSaveFileName(self, "Save Plot as PNG", "", "PNG Files (*.png)")
+            if not save_path: return
+            try:
+                self.decay_figure.savefig(save_path, dpi=300, bbox_inches='tight')
+                QMessageBox.information(self, "Success", f"Plot saved to:\n{save_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save plot:\n{e}")
+
+        elif export_format == "csv":
+            save_path, _ = QFileDialog.getSaveFileName(self, "Save Decay Data as CSV", "", "CSV Files (*.csv)")
+            if not save_path: return
+
+            try:
+                # --- Retrieve the cached data from the last plot ---
+                time_axis = self.last_plot_data.get("time_axis")
+                decay_data_da = self.last_plot_data.get("decay_data")
+                
+                if time_axis is None or decay_data_da is None:
+                    raise ValueError("Last plot data is incomplete.")
+
+                # --- Re-generate the curves and labels ---
+                # This ensures we export exactly what's plotted
+                remaining_dims = [dim for dim in decay_data_da.dims if dim != 'tcspc_channel']
+                decay_curves = []
+                curve_labels = []
+
+                if not remaining_dims:
+                    decay_curves.append(decay_data_da.values)
+                    curve_labels.append("Summed_Decay")
+                else:
+                    for coord_tuple, single_curve in decay_data_da.groupby(remaining_dims, squeeze=False):
+                        label = ", ".join([f"{dim[0].upper()}:{val}" for dim, val in zip(remaining_dims, np.atleast_1d(coord_tuple))])
+                        decay_curves.append(single_curve.values.squeeze())
+                        curve_labels.append(label)
+                
+                dataset_name = self.dataset.attrs.get("source_filename", "N/A")
+
+                # --- Call the backend exporter ---
+                export_decay_data(
+                    output_path=Path(save_path),
+                    time_axis=time_axis,
+                    decay_curves=decay_curves,
+                    curve_labels=curve_labels,
+                    dataset_name=dataset_name.replace(".ptu", "") # Remove extension
+                )
+                QMessageBox.information(self, "Success", f"Data saved to:\n{save_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to export data:\n{e}")

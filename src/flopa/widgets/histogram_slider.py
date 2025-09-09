@@ -104,7 +104,7 @@ class HistogramSlider(QWidget):
         if self.data is not None:
             # Get the full range from the slider for the histogram bins
             full_min, full_max = self.slider.minimum(), self.slider.maximum()
-            self.ax.hist(self.data, bins=50, color="#FFFFFF44", log=True, range=(full_min, full_max))
+            self.ax.hist(self.data, bins=50, color="#FFFFFF29", log=True, range=(full_min, full_max))
             self.ax.set_xlim(full_min, full_max)
             
             # Now draw the lines and gradient
@@ -115,7 +115,7 @@ class HistogramSlider(QWidget):
             grad = np.linspace(0, 1, 256).reshape(1, 256)
             self.ax.imshow(
                 grad, aspect='auto', extent=[min_val, max_val, *self.ax.get_ylim()],
-                cmap=self.colormap, origin='lower', zorder=-1
+                cmap=self.colormap, origin='lower', zorder=0, alpha=0.8
             )
             
             # Also update the labels here
