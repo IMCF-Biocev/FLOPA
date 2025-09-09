@@ -76,12 +76,20 @@ class HistogramSlider(QWidget):
         if valid_data.size == 0: return
         self.data = valid_data
         min_val, max_val = np.min(self.data), np.max(self.data)
-        if min_val >= max_val: max_val = min_val + 1
 
         self._is_updating = True
         self.slider.setRange(min_val, max_val)
-        p5, p95 = np.percentile(self.data, [5, 95])
-        self.slider.setValue((max(min_val, p5), min(max_val, p95)))
+        low, high = np.percentile(self.data, [5, 95])
+        if not np.isfinite([low, high]).all():
+            low, high = 0, 1
+
+        if low >= high:
+            # collapse case: enforce a minimal width
+            low, high = min_val, min_val + 1
+
+        self.slider.setRange(min_val, max_val if max_val > min_val else min_val + 1)
+        self.slider.setValue((low, high))
+
         self._is_updating = False
         
         # When data changes, trigger a full redraw including the histogram bars
