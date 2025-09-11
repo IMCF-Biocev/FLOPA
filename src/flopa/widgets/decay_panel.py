@@ -15,7 +15,7 @@ from functools import partial
 import itertools
 from pathlib import Path
 
-from .utils.style import dark_plot, light_plot
+from .utils.style import dark_plot, light_plot, GROUP_BOX_STYLE_A, apply_style
 from flopa.io.ptuio.utils import aggregate_dataset
 from .utils.legend_checkbox import LegendCheckBox
 from flopa.io.ptuio.utils import shift_decay
@@ -71,7 +71,7 @@ class DecayPanel(QWidget):
         self.shift_spinbox.setRange(-500, 500)
         self.shift_spinbox.setValue(0)
         self.shift_spinbox.setToolTip("Apply a circular shift to the decay curves (in channels).")
-        controls_layout.addRow("Decay Shift (channels):", self.shift_spinbox)
+        controls_layout.addRow("Decay Shift:", self.shift_spinbox)
 
         layout.addWidget(controls_group)
 
@@ -83,55 +83,21 @@ class DecayPanel(QWidget):
         self.shift_spinbox.valueChanged.connect(self.plot_current_decay)
         self.shift_spinbox.valueChanged.connect(self.decay_shift_changed.emit)
 
-        # --- Group 3: Decay Plot Display ---
-        plot_group = QGroupBox("Decay Curve"); 
-        plot_group.setStyleSheet("""
-            QGroupBox {
-                /* Style the box itself */
-                margin-top: 12px;       /* Space for the title */
-            }
-            
-            QGroupBox::title {
-                /* Style the title */
-                subcontrol-origin: margin;
-                
-                padding-left: 20px;
-                padding-right: 20px;
 
-                font-size: 12pt; /* Use points for better scaling */
-                font-weight: bold;
-                color: #f5ea1d; /* Light gray for text */
-            }
-        """)
+
+        # --- Group 3: Decay Plot Display ---
+        plot_group = QGroupBox("Decay Plot")
+        apply_style(plot_group, GROUP_BOX_STYLE_A)
+
         plot_layout = QVBoxLayout(plot_group)
         self.decay_figure = Figure(figsize=(5, 3)); self.decay_canvas = FigureCanvas(self.decay_figure)
         self.decay_ax = self.decay_figure.add_subplot(111)
         plot_layout.addWidget(self.decay_canvas)
         layout.addWidget(plot_group)
-        
-        # --- Group 2: Plot Options ---
-        options_group = QGroupBox(""); options_layout = QHBoxLayout(options_group)
-        self.dark_mode_check = QCheckBox("Use Dark Theme"); self.dark_mode_check.setChecked(True)
-        self.dark_mode_check.toggled.connect(self._on_theme_changed)
-        options_layout.addWidget(self.dark_mode_check); options_layout.addStretch()
-
-        options_layout.addWidget(QLabel(""))
-        
-        self.export_combo = QComboBox()
-        self.export_combo.addItem("Plot (.png)", "png")
-        self.export_combo.addItem("Data (.csv)", "csv")
-        options_layout.addWidget(self.export_combo)
-        
-        self.btn_export = QPushButton("Save...")
-        self.btn_export.clicked.connect(self._on_export)
-        options_layout.addWidget(self.btn_export)
-
-        layout.addWidget(options_group)
-
 
         # --- NEW: Group 4: Trace Visibility ---
-        self.visibility_group = QGroupBox("")
-
+        self.visibility_group = QGroupBox("Legend")
+        apply_style(self.visibility_group, GROUP_BOX_STYLE_A)
         visibility_main_layout = QVBoxLayout(self.visibility_group)
 
         actions_layout = QHBoxLayout()
@@ -166,6 +132,29 @@ class DecayPanel(QWidget):
         
         layout.addWidget(self.visibility_group)
         self.visibility_group.setVisible(False) # Hide until there are traces
+
+        
+        # --- Group 2: Plot Options ---
+        options_group = QGroupBox(""); options_layout = QHBoxLayout(options_group)
+        self.dark_mode_check = QCheckBox("Use Dark Theme"); self.dark_mode_check.setChecked(True)
+        self.dark_mode_check.toggled.connect(self._on_theme_changed)
+        options_layout.addWidget(self.dark_mode_check); options_layout.addStretch()
+
+        options_layout.addWidget(QLabel(""))
+        
+        self.export_combo = QComboBox()
+        self.export_combo.addItem("Plot (.png)", "png")
+        self.export_combo.addItem("Data (.csv)", "csv")
+        options_layout.addWidget(self.export_combo)
+        
+        self.btn_export = QPushButton("Save...")
+        self.btn_export.clicked.connect(self._on_export)
+        options_layout.addWidget(self.btn_export)
+
+        layout.addWidget(options_group)
+
+
+
 
         layout.addStretch()
 

@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from pathlib import Path
 
-from .utils.style import dark_plot, light_plot
+from .utils.style import dark_plot, light_plot, GROUP_BOX_STYLE_A, apply_style
 from flopa.io.ptuio.utils import draw_unitary_circle, average_phasor, aggregate_dataset, smooth_weighted
 from .calibration_dialog import CalibrationDialog
 from flopa.processing.phasor import calculate_phasor_calibration_factor, apply_phasor_calibration
@@ -37,74 +37,82 @@ class PhasorPanel(QWidget):
         layout = QVBoxLayout(self)
         
         # --- Group 1: Intensity Thresholding ---
-        threshold_group = QGroupBox("1. Intensity Thresholding")
-        threshold_layout = QFormLayout(threshold_group)
-        
-        self.thresh_enable_check = QCheckBox("Enable Live Threshold Preview")
-        self.thresh_enable_check.toggled.connect(self._on_threshold_enable_toggled)
-        threshold_layout.addRow(self.thresh_enable_check)
-        
-        # This container will hold the new range slider
-        self.slider_container = QWidget()
-        slider_vbox = QVBoxLayout(self.slider_container)
-        slider_vbox.setContentsMargins(0, 0, 0, 0)
+        self.thresholding_group = QGroupBox("Intensity Thresholding")
+        self.thresholding_group.setObjectName("plain")
+        apply_style(self.thresholding_group, GROUP_BOX_STYLE_A)
+        self.thresholding_group.setCheckable(True)
+        self.thresholding_group.setChecked(False)
+        threshold_layout = QFormLayout(self.thresholding_group)
 
-        # Use QDoubleRangeSlider for a min/max slider
-        self.thresh_range_slider = QDoubleRangeSlider(Qt.Horizontal)
-        self.thresh_range_slider.setRange(0, 1) # Placeholder
-        self.thresh_range_slider.valueChanged.connect(self._update_threshold_preview)
-        
-        # Labels to show the current range
-        self.thresh_label = QLabel("Range: 0 - 1")
-        self.thresh_label.setAlignment(Qt.AlignCenter)
-        
-        slider_vbox.addWidget(self.thresh_range_slider)
-        slider_vbox.addWidget(self.thresh_label)
-        
+        self.slider_container = QWidget(); slider_hbox = QHBoxLayout(self.slider_container)
+        slider_hbox.setContentsMargins(0, 0, 0, 0)
+        self.thresh_range_slider = QDoubleRangeSlider(Qt.Horizontal); self.thresh_range_slider.setRange(0, 1)
+        self.min_label = QLabel("0"); self.max_label = QLabel("1")
+
+        slider_hbox.addWidget(self.min_label)
+        slider_hbox.addWidget(self.thresh_range_slider)
+        slider_hbox.addWidget(self.max_label)
+        #slider_vbox.addWidget(self.thresh_label)
         threshold_layout.addRow(self.slider_container)
-        self.slider_container.setVisible(False)
-        layout.addWidget(threshold_group)
+        self.slider_container.setVisible(True) # Hide the contents, not the group
+        
+        self.thresholding_group.toggled.connect(self._on_threshold_enable_toggled)
+        self.thresh_range_slider.valueChanged.connect(self._update_threshold_preview)
 
-        # --- Group 2: Computation ---
-        compute_group = QGroupBox("2. Analysis Configuration"); compute_layout = QFormLayout(compute_group)
+        layout.addWidget(self.thresholding_group)
+
+        # group
+        setup_group = QGroupBox("Setup")
+        apply_style(setup_group, GROUP_BOX_STYLE_A)
+        setup_layout = QGridLayout(setup_group)
+        setup_layout.setColumnStretch(0, 1); setup_layout.setColumnStretch(1, 1)
+
+        ## masking
+        compute_group = QGroupBox(); compute_layout = QFormLayout(compute_group)
+        apply_style(compute_group, GROUP_BOX_STYLE_A)
         self.mask_combobox = QComboBox(); self.viewer.layers.events.inserted.connect(self._update_mask_combobox); self.viewer.layers.events.removed.connect(self._update_mask_combobox)
         compute_layout.addRow("Select Mask Layer:", self.mask_combobox)
         self.per_object_radio = QRadioButton("Per Object"); self.per_object_radio.setChecked(True)
         self.per_pixel_radio = QRadioButton("Per Pixel")
         mode_hbox = QHBoxLayout(); mode_hbox.addWidget(self.per_object_radio); mode_hbox.addWidget(self.per_pixel_radio)
         compute_layout.addRow("Mode:", mode_hbox)
-        layout.addWidget(compute_group)
 
+        # new        
+        self.pixel_options_container = QWidget()
+        pixel_opt_hbox = QHBoxLayout(self.pixel_options_container)
+        pixel_opt_hbox.setContentsMargins(0, 0, 0, 0)
+        pixel_opt_hbox.addStretch()
 
-        # --- NEW Group: Calibration & Smoothing ---
-        # cal_group = QGroupBox("3. Processing")
-        # cal_layout = QFormLayout(cal_group)
-        # self.calibrate_check = QCheckBox("Apply Calibration")
-        # cal_layout.addRow(self.calibrate_check)
-        # self.cal_factor_display = QLineEdit("1.0 - 0.0j"); self.cal_factor_display.setToolTip("Calibration factor (g ± sj)")
-        # self.btn_calculate_cal = QPushButton("Calculate..."); self.btn_calculate_cal.clicked.connect(self._on_calculate_cal_factor)
-        # cal_hbox = QHBoxLayout(); cal_hbox.addWidget(self.cal_factor_display); cal_hbox.addWidget(self.btn_calculate_cal)
-        # cal_layout.addRow("Factor:", cal_hbox)
-        # self.smooth_check = QCheckBox("Apply Smoothing")
-        # self.smooth_size_spin = QSpinBox(); self.smooth_size_spin.setRange(3, 15); self.smooth_size_spin.setSingleStep(2); self.smooth_size_spin.setValue(3)
-        # smooth_hbox = QHBoxLayout(); smooth_hbox.addWidget(self.smooth_check); smooth_hbox.addWidget(QLabel("Kernel Size:")); smooth_hbox.addWidget(self.smooth_size_spin); smooth_hbox.addStretch()
-        # cal_layout.addRow(smooth_hbox)
-        # layout.addWidget(cal_group)
+        self.plot_mode_scatter = QRadioButton("Scatter"); self.plot_mode_scatter.setChecked(True)
+        self.plot_mode_intensity = QRadioButton("Intensity Weighted")
+        self.plot_mode_density = QRadioButton("Density")
 
+        self.pixel_plot_mode_buttons = QButtonGroup(self)
+        self.pixel_plot_mode_buttons.addButton(self.plot_mode_scatter)
+        self.pixel_plot_mode_buttons.addButton(self.plot_mode_intensity)
+        self.pixel_plot_mode_buttons.addButton(self.plot_mode_density)
 
-# In PhasorPanel._init_ui method
+        pixel_opt_hbox.addWidget(self.plot_mode_scatter)
+        pixel_opt_hbox.addWidget(self.plot_mode_intensity)
+        pixel_opt_hbox.addWidget(self.plot_mode_density)
+        compute_layout.addRow(self.pixel_options_container)
+        self.per_pixel_radio.toggled.connect(self.pixel_options_container.setEnabled)
+        self.pixel_options_container.setEnabled(False)
 
-        # --- Group 3: Calibration & Smoothing ---
-        cal_group = QGroupBox("3. Processing")
-        cal_layout = QFormLayout(cal_group)
+        #self.per_pixel_radio.toggled.connect(self.pixel_opt_hbox.setEnabled)
+        # Re-plotting is needed when the pixel plot mode changes
+        # Use a lambda to ensure _on_compute_clicked is called only when the button is checked
+        self.plot_mode_scatter.toggled.connect(lambda checked: self._on_compute_clicked() if checked else None)
+        self.plot_mode_intensity.toggled.connect(lambda checked: self._on_compute_clicked() if checked else None)
+        self.plot_mode_density.toggled.connect(lambda checked: self._on_compute_clicked() if checked else None)
 
-        # --- Calibration Mode Selection ---
-        self.calibrate_check = QCheckBox("Apply Calibration")
-        # When the main checkbox is toggled, it's good practice to re-plot
-        self.calibrate_check.toggled.connect(self._on_compute_clicked)
-        cal_layout.addRow(self.calibrate_check)
+        setup_layout.addWidget(compute_group, 0, 0, 1, 2)
 
-        # A container for the two radio button modes
+        # --- Group 2: Computation ---
+        self.cal_group = QGroupBox("Calibration"); cal_layout = QFormLayout(self.cal_group)
+        self.cal_group.setObjectName("plain")
+        self.cal_group.setCheckable(True)
+        self.cal_group.setChecked(False)
         cal_mode_widget = QWidget()
         cal_mode_hbox = QHBoxLayout(cal_mode_widget)
         cal_mode_hbox.setContentsMargins(0, 0, 0, 0)
@@ -142,28 +150,36 @@ class PhasorPanel(QWidget):
         cal_factor_hbox.addWidget(self.btn_calculate_cal)
         cal_layout.addRow("Factor:", cal_factor_hbox)
 
-        # --- Spatial Smoothing Controls ---
+        setup_layout.addWidget(self.cal_group, 1, 0)
+
+
+        # Smoothing
+        self.smooth_group = QGroupBox("Smoothing")
+        self.smooth_group.setObjectName("plain")
+        self.smooth_group.setCheckable(True)
+        self.smooth_group.setChecked(False)
+        smooth_layout = QFormLayout(self.smooth_group)
         smooth_widget = QWidget()
         smooth_hbox = QHBoxLayout(smooth_widget)
         smooth_hbox.setContentsMargins(0, 0, 0, 0)
         
-        self.smooth_check = QCheckBox("Apply Spatial Smoothing")
-        self.smooth_check.toggled.connect(self._on_compute_clicked) # Re-plot when toggled
-        
         self.smooth_size_spin = QSpinBox()
-        self.smooth_size_spin.setRange(3, 15)
-        self.smooth_size_spin.setSingleStep(2) # Odd numbers are typical for kernels
+        self.smooth_size_spin.setRange(2, 15)
+        self.smooth_size_spin.setSingleStep(1) # Odd numbers are typical for kernels
         self.smooth_size_spin.setValue(3)
         self.smooth_size_spin.valueChanged.connect(self._on_compute_clicked)
         
-        smooth_hbox.addWidget(self.smooth_check)
         smooth_hbox.addWidget(QLabel("Kernel Size:"))
         smooth_hbox.addWidget(self.smooth_size_spin)
         smooth_hbox.addStretch()
         
-        cal_layout.addRow(smooth_widget)
-        
-        layout.addWidget(cal_group)
+        smooth_layout.addWidget(smooth_widget)
+
+        setup_layout.addWidget(self.smooth_group, 1, 1)
+        layout.addWidget(setup_group)
+
+
+
 
         # --- Group 4: Action ---
         self.btn_compute = QPushButton("Plot Phasor from Current Slice"); self.btn_compute.clicked.connect(self._on_compute_clicked)
@@ -171,28 +187,14 @@ class PhasorPanel(QWidget):
 
         # --- Group Plot Display ---
         plot_group = QGroupBox("Phasor Plot")
-        plot_group.setStyleSheet("""
-            QGroupBox {
-                /* Style the box itself */
-                margin-top: 12px;       /* Space for the title */
-            }
-            
-            QGroupBox::title {
-                /* Style the title */
-                subcontrol-origin: margin;
-                
-                padding-left: 20px;
-                padding-right: 20px;
+        apply_style(plot_group, GROUP_BOX_STYLE_A)
 
-                font-size: 12pt; /* Use points for better scaling */
-                font-weight: bold;
-                color: #f5ea1d; /* Light gray for text */
-            }
-        """) 
         plot_layout = QVBoxLayout(plot_group)
         self.phasor_figure = Figure(figsize=(5, 4)); self.phasor_canvas = FigureCanvas(self.phasor_figure); self.phasor_ax = self.phasor_figure.add_subplot(111)
         plot_layout.addWidget(self.phasor_canvas)
         layout.addWidget(plot_group)
+
+
 
         # --- Group Plot Options ---
         options_group = QGroupBox(""); options_layout = QHBoxLayout(options_group)
@@ -225,7 +227,7 @@ class PhasorPanel(QWidget):
         has_phasor = "phasor_g" in self.dataset.data_vars
         
         # Enable the controls based on the available data.
-        self.thresh_enable_check.setEnabled(has_intensity)
+        self.thresholding_group.setEnabled(has_intensity)
         self.btn_compute.setEnabled(has_phasor)
 
     @Slot(dict)
@@ -234,6 +236,8 @@ class PhasorPanel(QWidget):
         self.active_selectors = selectors
         # The thresholding UI needs to know about the current intensity slice
         self._update_thresholding_data()
+        if self.thresholding_group.isChecked():
+            self._update_threshold_preview()
         self.btn_compute.setEnabled(self.dataset is not None and "phasor_g" in self.dataset.data_vars)
 
 
@@ -243,36 +247,37 @@ class PhasorPanel(QWidget):
         current active slice of the intensity image.
         """
         if not self.active_selectors or self.dataset is None or "photon_count" not in self.dataset.data_vars:
-            self.thresh_enable_check.setEnabled(False)
+            self.thresholding_group.setEnabled(False)
             return
-
+        self.thresholding_group.setEnabled(True)
         # Calculate the current intensity slice
         intensity_da = self.dataset.photon_count
         final_ds = self._get_active_slice(intensity_da)
         intensity_slice = final_ds[intensity_da.name].values.squeeze()
         
         if intensity_slice is not None and intensity_slice.size > 0:
-            self.thresh_enable_check.setEnabled(True)
+            # self.thresholding_group.setChecked(True)
             max_photons = int(np.nanmax(intensity_slice))
             if max_photons > 0:
                 # Update the range slider's limits
                 self.thresh_range_slider.setRange(0, max_photons)
                 # Set a reasonable default value (e.g., 1 to max)
                 self.thresh_range_slider.setValue((1, max_photons))
-                self.thresh_label.setText(f"Range: 1 - {max_photons}")
-        else:
-            self.thresh_enable_check.setEnabled(False)
+                self.min_label.setText(f"1")
+                self.max_label.setText(f"{max_photons}")
+        # else:
+        #     self.thresholding_group.setChecked(False)
 
     def _on_threshold_enable_toggled(self, checked):
         """Shows/hides the sliders and the preview layer."""
-        self.slider_container.setVisible(checked)
-        preview_layer_name = "intensity_threshold_preview"
+        # self.slider_container.setVisible(checked)
+        preview_layer_name = "intensity_threshold"
         
         if checked:
             # Check if we have data to threshold
             if not self.active_selectors or self.dataset is None or "photon_count" not in self.dataset.data_vars:
                 QMessageBox.warning(self, "No Slice", "No active slice selected in the FLIM View panel.")
-                self.thresh_enable_check.setChecked(False); return
+                self.thresholding_group.setChecked(False); return
             
             intensity_slice = self._get_active_slice(self.dataset.photon_count).photon_count.values.squeeze()
             max_photons = int(np.nanmax(intensity_slice))
@@ -297,8 +302,8 @@ class PhasorPanel(QWidget):
 
     def _update_threshold_preview(self):
         """Calculates and updates the preview mask layer in real-time."""
-        preview_layer_name = "intensity_threshold_preview"
-        if not self.thresh_enable_check.isChecked() or preview_layer_name not in self.viewer.layers:
+        preview_layer_name = "intensity_threshold"
+        if not self.thresholding_group.isChecked() or preview_layer_name not in self.viewer.layers:
             return
             
         # Get the most up-to-date intensity slice
@@ -307,11 +312,14 @@ class PhasorPanel(QWidget):
         min_val, max_val = self.thresh_range_slider.value()
 
         # Update the label
-        self.thresh_label.setText(f"Range: {int(min_val)} - {int(max_val)}")
-
+        # self.thresh_label.setText(f"Range: {int(min_val)} - {int(max_val)}")
+        self.min_label.setText(f"{int(min_val)}")
+        self.max_label.setText(f"{int(max_val)}")
         # Create the boolean mask and update the layer data
         mask_data = (intensity_slice >= min_val) & (intensity_slice <= max_val)
         self.viewer.layers[preview_layer_name].data = mask_data.astype(np.uint8)
+        
+        self._ensure_preview_on_top()
 
 
     def _get_active_slice(self, data_array: xr.DataArray) -> xr.Dataset:
@@ -377,14 +385,14 @@ class PhasorPanel(QWidget):
             phasor_s = final_ds.phasor_s.values.squeeze()
 
             # --- 2. APPLY PROCESSING (SMOOTHING & CALIBRATION) ---
-            if self.smooth_check.isChecked():
+            if self.smooth_group.isChecked():
                 kernel_size = self.smooth_size_spin.value()
                 phasor_g, _ = smooth_weighted(phasor_g, photon_count, size=kernel_size)
                 phasor_s, _ = smooth_weighted(phasor_s, photon_count, size=kernel_size)
 
             phasor_array = phasor_g + 1j * phasor_s
 
-            if self.calibrate_check.isChecked():
+            if self.cal_group.isChecked():
                 # try:
                 #     cal_factor = self._parse_str_to_complex(self.cal_factor_display.text())
                 #     phasor_array = apply_phasor_calibration(phasor_array, cal_factor)
@@ -438,13 +446,14 @@ class PhasorPanel(QWidget):
                     colors = colormap[pixel_labels % len(colormap)]
                 else:
                     labels = np.full(g_coords.shape, np.nan)
-                    colors = 'grey'
+                    colors = 'white'
 
             elif self.per_object_radio.isChecked():
                 if mask_array is None:
+                    valid_pixels = np.isfinite(phasor_array) & (photon_count > 0)
                     avg_phasor = average_phasor(phasor_array, photon_count)
                     if np.isfinite(avg_phasor): 
-                        g_coords, s_coords, colors = [avg_phasor.real], [avg_phasor.imag], ['grey']
+                        g_coords, s_coords, colors = [avg_phasor.real], [avg_phasor.imag], ['white']
                         photon_counts = [np.sum(photon_count[np.isfinite(phasor_array)])]
                         labels = [np.nan]
                         areas = [np.sum(valid_pixels)]
@@ -457,8 +466,10 @@ class PhasorPanel(QWidget):
                         avg_phasor = average_phasor(phasor_array, photon_count, mask=object_mask)                        
                         if np.isfinite(avg_phasor):
                             g_coords.append(avg_phasor.real); s_coords.append(avg_phasor.imag)
-                            total_photons = np.sum(photon_count[object_mask])
-                            photon_counts.append(total_photons)
+                            # total_photons = np.sum(photon_count[object_mask])
+                            # photon_counts.append(total_photons)
+                            valid_object_pixels = np.isfinite(phasor_array) & (photon_count > 0) & object_mask
+                            photon_counts.append(np.sum(photon_count[valid_object_pixels]))
                             labels.append(label_id)
                             areas.append(np.sum(object_mask))
                             colors.append(colormap[label_id % len(colormap)])
@@ -474,16 +485,19 @@ class PhasorPanel(QWidget):
             }
             # --- 5. PLOT ---
             sync_rate = self.dataset.attrs.get('instrument_params', {}).get('TTResult_SyncRate', 40e6)
-            self._plot_phasor(g_coords, s_coords, colors, sync_rate, mask_layer=mask_layer)
+            self._plot_phasor(g_coords, s_coords, colors, sync_rate, mask_layer=mask_layer, photon_counts=photon_counts, labels=labels)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred during phasor computation:\n{e}")
         finally:
             QApplication.restoreOverrideCursor()
 
-    def _plot_phasor(self, g=None, s=None, colors=None, sync_rate=40e6, message=None, mask_layer=None):
+    def _plot_phasor(self, g=None, s=None, colors=None, sync_rate=40e6, message=None, mask_layer=None, photon_counts=None, labels=None):
 
-        self.last_plot_data = {"g": g, "s": s, "colors": colors, "sync_rate": sync_rate, "message": message, "mask_layer": mask_layer}
+        self.last_plot_data = {"g": g, "s": s, 
+                               "colors": colors, "sync_rate": sync_rate,
+                                 "message": message, "mask_layer": mask_layer, 
+                                 "photon_counts": photon_counts, "labels": labels}
 
         self.phasor_ax.clear()
         if self.dark_mode_check.isChecked(): 
@@ -497,8 +511,49 @@ class PhasorPanel(QWidget):
 
         if message: self.phasor_ax.text(0.5, 0.5, message, color=circle_color, ha='center', va='center', transform=self.phasor_ax.transAxes)
         if g is not None and g.size > 0: 
-            self.phasor_ax.scatter(g, s, c=colors, s=(3 if g.size > 1000 else 40), alpha=0.8, edgecolor=edge_color, linewidth=0.2)
+            # self.phasor_ax.scatter(g, s, c=colors, s=(3 if g.size > 1000 else 40), alpha=0.8, edgecolor=edge_color, linewidth=0.2)
     
+            if self.per_object_radio.isChecked():
+                # --- Mode 1: Per Object (simple scatter) ---
+                self.phasor_ax.scatter(g, s, c=colors, s=40, alpha=0.8, edgecolor=edge_color, linewidth=0.2)
+            
+            elif self.per_pixel_radio.isChecked():
+                # --- Mode 2: Per Pixel (multiple options) ---
+                
+                if self.plot_mode_scatter.isChecked():
+                    # Standard scatter plot
+                    self.phasor_ax.scatter(g, s, c=colors, s=3, alpha=0.8, edgecolor='none')
+
+                elif self.plot_mode_intensity.isChecked():
+                    # Intensity-weighted alpha
+                    if photon_counts is not None and photon_counts.max() > 0:
+                        # Normalize photon counts to be the alpha values
+                        alpha_vals = photon_counts / photon_counts.max()
+                        if isinstance(colors, np.ndarray) and colors.shape[1] == 4:
+                            # Create a copy to avoid modifying the cached data
+                            point_colors = np.copy(colors)
+                            point_colors[:, 3] = alpha_vals # Set the alpha channel
+                            self.phasor_ax.scatter(g, s, c=point_colors, s=3, edgecolor='none')
+                        else: # Fallback for "Entire Image" case where colors is 'white'
+                            self.phasor_ax.scatter(g, s, c='white', alpha=alpha_vals, s=3, edgecolor='none')
+                    else:
+                         self.phasor_ax.scatter(g, s, c='white', s=3, alpha=0.8, edgecolor='none')
+                
+                elif self.plot_mode_density.isChecked():
+                    # Density plot (2D Histogram)
+                    # Use the extent of the unitary circle for nice binning
+                    H, xedges, yedges = np.histogram2d(g, s, bins=150, range=[[-0.1, 1.1], [-0.1, 0.8]])
+                    
+                    # Create alpha mask to make empty bins transparent
+                    alpha = np.ones_like(H, dtype=float)
+                    alpha[H == 0] = 0.0 # Use 0 instead of H.min() for robustness
+                    
+                    self.phasor_ax.imshow(
+                        H.T, origin='lower',
+                        extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+                        cmap='hot', aspect='equal', alpha=alpha.T
+                    )
+
         self.phasor_ax.set_xlabel('g', fontsize=9)
         self.phasor_ax.set_ylabel('s', fontsize=9)
         self.phasor_ax.tick_params(axis='both', which='major', labelsize=9)
@@ -586,7 +641,7 @@ class PhasorPanel(QWidget):
                 self.cal_factor_display.setText(self._format_complex_to_str(factor))
                 
                 # If calibration is already enabled, trigger a replot
-                if self.calibrate_check.isChecked():
+                if self.cal_group.isChecked():
                     self._on_compute_clicked()
                     
             except (ValueError, ZeroDivisionError) as e:
@@ -655,3 +710,20 @@ class PhasorPanel(QWidget):
                     # ------------------------------------
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to export data:\n{e}")
+
+    def _ensure_preview_on_top(self):
+        """
+        Finds the intensity threshold preview layer and moves it to the top
+        of the napari layer list if it exists.
+        """
+        preview_layer_name = "intensity_threshold"
+        
+        # Check if the layer exists in the viewer
+        if preview_layer_name in self.viewer.layers:
+            # Find its current index in the layer list
+            layer = self.viewer.layers[preview_layer_name]
+            num_layers = len(self.viewer.layers)
+            current_index = self.viewer.layers.index(layer)
+            # If it's not already at the top (index 0), move it.
+            if current_index < num_layers - 1:
+                self.viewer.layers.move(current_index, -1)

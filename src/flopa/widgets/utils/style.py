@@ -52,3 +52,40 @@ def light_plot(ax, fig):
         legend.get_frame().set_edgecolor(light_grid)
         for text in legend.get_texts():
             text.set_color(dark_text)
+
+GROUP_BOX_STYLE_A = """
+    QGroupBox {
+        margin-top: 8px;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        padding: 0px 2px; /* A shorter way to write padding-left/right */
+        font-size: 12pt;
+        font-weight: bold;
+        color: #f5ea1d;
+    }
+    QGroupBox#plain::title {
+        subcontrol-origin: margin;
+        padding: 0px 2px; /* A shorter way to write padding-left/right */
+        font-size: 12pt;
+        font-weight: bold;
+        color: #e0e0e0;
+    }
+"""
+
+GROUP_BOX_STYLE_B = """
+    QGroupBox {
+        margin-top: 10px;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        padding: 0px 2px; /* A shorter way to write padding-left/right */
+        font-size: 12pt;
+        font-weight: bold;
+        color: #40ccff;
+    }
+"""
+
+def apply_style(widget, style_string):
+    """Applies a Qt Style Sheet to a given widget."""
+    widget.setStyleSheet(style_string)
