@@ -11,8 +11,15 @@ authors = [
   { name = "Dalibor Panek", email = "panekdal@natur.cuni.cz" },
 ]
 dependencies = [
-  "numpy",
-  "scikit-image",
+    "numpy",
+    "xarray",
+    "napari[all]",
+    "qtpy",
+    "h5netcdf",
+    "tifffile",
+    "matplotlib",
+    "scipy",
+    "superqt"
 ]
 
 [tool.setuptools.packages.find]

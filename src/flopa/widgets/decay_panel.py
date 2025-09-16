@@ -129,18 +129,42 @@ class DecayPanel(QWidget):
             btn_from_view.setEnabled(False)
         else:
             btn_from_view.clicked.connect(self._on_from_view_clicked)
-        actions_layout.addWidget(btn_from_view); actions_layout.addStretch()
-        self.legend_main_layout.addLayout(actions_layout)
+        actions_layout.addWidget(btn_from_view)
+        # actions_layout.addStretch()
+        # self.legend_main_layout.addLayout(actions_layout)
+        # if 'detector' in self.dataset.dims and self.dataset.sizes['detector'] > 1:
+        #     detector_hbox = QHBoxLayout(); detector_label = QLabel("<b>Detector:</b>")
+        #     detector_hbox.addWidget(detector_label)
+        #     for i in self.dataset.coords['detector'].values:
+        #         btn = QPushButton(f"D{i}"); btn.setCheckable(True); btn.setChecked(False)
+        #         btn.setToolTip(f"Toggle all decays for Detector {i}"); btn.setFixedWidth(40)
+        #         btn.toggled.connect(lambda checked, det_idx=i: self._on_detector_toggle(checked, det_idx))
+        #         detector_hbox.addWidget(btn); self.detector_toggles.append(btn)
+        #     detector_hbox.addStretch()
+        #     self.legend_main_layout.addLayout(detector_hbox)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        actions_layout.addWidget(separator)
+
+        # 3. Conditionally add the detector-specific controls to the SAME layout
         if 'detector' in self.dataset.dims and self.dataset.sizes['detector'] > 1:
-            detector_hbox = QHBoxLayout(); detector_label = QLabel("<b>Detector Toggles:</b>")
-            detector_hbox.addWidget(detector_label)
+            detector_label = QLabel("<b>Detector:</b>")
+            actions_layout.addWidget(detector_label)
+
             for i in self.dataset.coords['detector'].values:
-                btn = QPushButton(f"D{i}"); btn.setCheckable(True); btn.setChecked(False)
-                btn.setToolTip(f"Toggle all decays for Detector {i}"); btn.setFixedWidth(40)
+                btn = QPushButton(f"D{i}")
+                btn.setCheckable(True)
+                btn.setChecked(False)
+                btn.setToolTip(f"Toggle all decays for Detector {i}")
+                btn.setFixedWidth(40)
                 btn.toggled.connect(lambda checked, det_idx=i: self._on_detector_toggle(checked, det_idx))
-                detector_hbox.addWidget(btn); self.detector_toggles.append(btn)
-            detector_hbox.addStretch()
-            self.legend_main_layout.addLayout(detector_hbox)
+                actions_layout.addWidget(btn)
+                self.detector_toggles.append(btn)
+        
+        actions_layout.addStretch()
+        self.legend_main_layout.addLayout(actions_layout)
+
         scroll_area = QScrollArea(); scroll_area.setWidgetResizable(True); scroll_area.setFrameShape(QFrame.NoFrame)
         scroll_container = QWidget()
         grid_layout = QGridLayout(scroll_container); grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
