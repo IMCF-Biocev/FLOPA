@@ -11,9 +11,11 @@ FLOPA tool is made to handle the TTTR files from various FLIM data acquisition s
 
 | 1. PTU Reconstruction & Configuration | 2. Pixel-based Phasor |
 | :---: | :---: |
-| <img src="assets/screens/s01_reconstruction.png" width="600"> | <img src="assets/screens/s01_phasor_pixel_density_thr.png" width="600"> |
+| <img src="assets/screens/s01_reconstruction.png" width="575"> | <img src="assets/screens/s01_phasor_pixel_density_thr.png" width="600"> |
 | **3. Object-based Phasor** | **4. Decay Curve** |
-| <img src="assets/screens/s01_phasor_obj.png" width="600"> | <img src="assets/screens/s01_decay.png" width="600"> |
+| <img src="assets/screens/s01_phasor_obj.png" width="575"> | <img src="assets/screens/s01_decay.png" width="600"> |
+
+
 
 --- 
 
