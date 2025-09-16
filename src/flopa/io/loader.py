@@ -3,7 +3,10 @@ from .ptuio.decoder import T3OverflowCorrector
 from .ptuio.utils import estimate_tcspc_bins, marker_events, get_marker_distribution
 from flopa.processing.logger import ProgressLogger
 
+from pathlib import Path
 import numpy as np
+import xarray as xr
+import json
 
 def format_ptu_header(header_tags, constants, full_header=False):
     """
@@ -51,8 +54,6 @@ def format_ptu_header(header_tags, constants, full_header=False):
     return "\n".join(lines)
 
 
-
-# In flopa/io/loader.py
 
 def read_ptu_file(path, header=True, logger: ProgressLogger = None) -> dict:
     """
@@ -205,3 +206,30 @@ def _format_marker_suggestions(analysis_results: dict) -> str:
             
     return "\n".join(lines)
 
+
+def load_h5_dataset(filepath: Path) -> xr.Dataset:
+    """
+    Loads a dataset from an HDF5 file previously saved by FLOPA.
+    
+    This function correctly re-hydrates attributes that were saved as JSON
+    strings back into Python dictionaries.
+    
+    Args:
+        filepath (Path): The path to the .h5 file.
+        
+    Returns:
+        xr.Dataset: The fully reconstructed xarray Dataset.
+    """
+    ds = xr.open_dataset(filepath, engine='h5netcdf')
+    
+    # Create a copy of attributes to avoid modifying during iteration
+    attrs_copy = ds.attrs.copy()
+    
+    for key, value in attrs_copy.items():
+        if isinstance(value, str) and value.strip().startswith('{'):
+            try:
+                ds.attrs[key] = json.loads(value)
+            except json.JSONDecodeError:
+                pass # Not a valid JSON string, leave as is
+                
+    return ds

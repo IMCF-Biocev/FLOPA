@@ -318,7 +318,7 @@ class PhasorPanel(QWidget):
         # Create the boolean mask and update the layer data
         mask_data = (intensity_slice >= min_val) & (intensity_slice <= max_val)
         self.viewer.layers[preview_layer_name].data = mask_data.astype(np.uint8)
-        
+
         self._ensure_preview_on_top()
 
 

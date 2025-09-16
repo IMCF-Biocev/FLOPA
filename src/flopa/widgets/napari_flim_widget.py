@@ -30,7 +30,8 @@ class FlimWidget(QWidget):
         self.tabs.addTab(self.phasor_tab, "Phasor")
         self.tabs.setTabEnabled(self.tabs.indexOf(self.phasor_tab), False)
 
-        self.decay_tab = DecayPanel(viewer)
+        # self.decay_tab = DecayPanel(viewer)
+        self.decay_tab = DecayPanel(viewer, flim_view_panel=self.view_tab)
         self.tabs.addTab(self.decay_tab, "Decay")
         self.tabs.setTabEnabled(self.tabs.indexOf(self.decay_tab), False)
 
@@ -46,11 +47,13 @@ class FlimWidget(QWidget):
         It receives the complete reconstructed dataset and distributes it
         to all interested consumer panels.
         """        
+        source_name = dataset.attrs.get('source_filename', '')
+        is_from_h5 = not source_name or source_name.endswith('.h5')
         # 1. Store the new dataset as the central state
         self.reconstructed_dataset = dataset
 
         # 2. Distribute the complete dataset to all consumer panels.
-        self.view_tab.update_data(dataset)
+        self.view_tab.update_data(dataset, is_from_h5=is_from_h5)
         self.phasor_tab.update_data(dataset)
         self.decay_tab.update_data(dataset)
 
@@ -63,13 +66,6 @@ class FlimWidget(QWidget):
         has_decay_data = "tcspc_histogram" in data_vars
         self.tabs.setTabEnabled(self.tabs.indexOf(self.decay_tab), has_decay_data)
 
-
-    # @Slot(np.ndarray, np.ndarray, np.ndarray, dict)
-    # def _on_view_updated(self, flim_image, intensity_slice, lifetime_slice, slice_params):
-    #     """
-    #     Slot that is called whenever the user interacts with the FLIM view controls.
-    #     """
-    #     pass
 
     @Slot(int)
     def _on_decay_shift_changed(self, shift_value: int):

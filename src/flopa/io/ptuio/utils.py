@@ -199,7 +199,6 @@ def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow,
     return LT_rgb * intensity_normalized[..., np.newaxis]
 
 
-
 # def smooth_weighted(array, count, size: int = 3):
 
 def smooth_weighted(

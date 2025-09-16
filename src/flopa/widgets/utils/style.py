@@ -82,7 +82,7 @@ GROUP_BOX_STYLE_B = """
         padding: 0px 2px; /* A shorter way to write padding-left/right */
         font-size: 12pt;
         font-weight: bold;
-        color: #40ccff;
+        color: #ffbc2b;
     }
 """
 

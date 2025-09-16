@@ -29,8 +29,9 @@ class CalibrationDialog(QDialog):
         self.s_spinbox.setRange(-2.0, 2.0)
 
         form_layout.addRow("Theoretical Lifetime (ns):", self.tau_spinbox)
-        form_layout.addRow("Measured Phasor (g):", self.g_spinbox)
         form_layout.addRow("Measured Phasor (s):", self.s_spinbox)
+        form_layout.addRow("Measured Phasor (g):", self.g_spinbox)
+
         
         layout.addLayout(form_layout)
         
