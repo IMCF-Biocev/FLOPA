@@ -13,7 +13,7 @@ import xarray as xr
 from matplotlib import cm
 import traceback
 
-from flopa.io.ptuio.utils import aggregate_dataset, smooth_weighted
+from flopa.io.ptuio.utils import aggregate_dataset, smooth_weighted, smooth_count
 from .utils.style import apply_style, GROUP_BOX_STYLE_A, GROUP_BOX_STYLE_B
 from .histogram_slider import HistogramSlider
 from flopa.processing.flim_image import create_FLIM_image
@@ -259,13 +259,12 @@ class FlimViewPanel(QWidget):
                 
                 if has_intensity and self.smooth_intensity_check.isChecked():
                     kernel_size = self.smooth_intensity_spin.value()
-                    # Intensity is weighted by itself
-                    smoothed_intensity, _ = smooth_weighted(raw_intensity, raw_intensity, size=kernel_size)
+                    smoothed_intensity = smooth_count(count=raw_intensity, size=kernel_size)
 
                 if has_lifetime and self.smooth_lifetime_check.isChecked():
                     kernel_size = self.smooth_lifetime_spin.value()
                     # Lifetime is weighted by the raw (unsmoothed) intensity
-                    smoothed_lifetime, _ = smooth_weighted(raw_lifetime, raw_intensity, size=kernel_size)
+                    smoothed_lifetime, _ = smooth_weighted(array=raw_lifetime, count=raw_intensity, size=kernel_size)
                 # --- END MODIFIED ---
 
                 # 3. Cache the processed data for fast updates

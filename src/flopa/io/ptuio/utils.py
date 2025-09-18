@@ -281,6 +281,56 @@ def smooth_weighted(
 
     return array_smoothed, count_smoothed
 
+def smooth_count(
+    count: NDArray[np.integer],
+    size: int = 3
+) -> NDArray[np.uint32]:
+
+    """
+    Apply weighted 2D smoothing to an array using a square convolution kernel.
+
+    The function smooths a 2D array with a uniform kernel. 
+    
+    Parameters
+    ----------
+    count : np.ndarray
+        2D array of weights (e.g., photon counts).
+    size : int, optional
+        Size of the square convolution kernel. Must be a positive integer. 
+        Default is 3 (3×3 kernel).
+
+    Returns
+    -------
+    count_smoothed : np.ndarray
+        2D array of the same shape is input, representing  
+        (effective counts) after convolution.
+
+    Raises
+    ------
+    ValueError
+        If `size` is not a positive integer or if `array`/`count` are not 2D.
+
+    Notes
+    -----
+    - This function uses a uniform kernel (`np.ones`) for convolution which is effectively the same as 2D binning. 
+   
+    """
+    # Safety first
+    count = np.asarray(count)
+
+    # Sanity checks
+    if count.ndim != 2:
+        raise ValueError("count must be 2D array")
+
+    kernel = np.ones((size, size), dtype=np.float32)
+
+    # Convolve
+    count_smoothed = convolve2d(count, kernel, mode='same')
+
+    # Normalize
+    count_smoothed = np.asarray(count_smoothed, dtype=np.uint32)
+
+    return count_smoothed
 
 
 # --- Marker Helpers ---
