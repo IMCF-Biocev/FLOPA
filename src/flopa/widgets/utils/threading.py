@@ -9,7 +9,7 @@ class WorkerSignals(QObject):
     finished = Signal()
     error = Signal(tuple)
     result = Signal(object)
-    progress = Signal(str) # For progress updates
+    progress = Signal(str) 
 
 class Worker(QRunnable):
     '''Worker thread for running a function in the background.'''

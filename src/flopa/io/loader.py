@@ -222,7 +222,6 @@ def load_h5_dataset(filepath: Path) -> xr.Dataset:
     """
     ds = xr.open_dataset(filepath, engine='h5netcdf')
     
-    # Create a copy of attributes to avoid modifying during iteration
     attrs_copy = ds.attrs.copy()
     
     for key, value in attrs_copy.items():
@@ -230,6 +229,6 @@ def load_h5_dataset(filepath: Path) -> xr.Dataset:
             try:
                 ds.attrs[key] = json.loads(value)
             except json.JSONDecodeError:
-                pass # Not a valid JSON string, leave as is
+                pass 
                 
     return ds

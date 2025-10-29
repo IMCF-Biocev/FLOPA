@@ -2,7 +2,6 @@ import numpy as np
 from matplotlib import cm
 import warnings
 
-# --- Step 1: Optional Numba Import and the JIT-compiled core function ---
 try:
     from numba import njit
     _NUMBA_AVAILABLE = True
@@ -24,12 +23,10 @@ try:
 
                 norm_lt = (lifetime_val - lt_min) / lt_range
                 
-                # --- CORRECTED: Replace np.clip with scalar-safe comparisons ---
                 if norm_lt > 1.0:
                     norm_lt = 1.0
                 elif norm_lt < 0.0:
                     norm_lt = 0.0
-                # --- END CORRECTION ---
 
                 cmap_index = int(norm_lt * 255)
                 
@@ -40,12 +37,10 @@ try:
                 intensity_val = intensity[i, j]
                 brightness = (intensity_val - int_min) / int_range
 
-                # --- CORRECTED: Replace np.clip with scalar-safe comparisons ---
                 if brightness > 1.0:
                     brightness = 1.0
                 elif brightness < 0.0:
                     brightness = 0.0
-                # --- END CORRECTION ---
                 
                 rgb_image[i, j, 0] = color_r * brightness
                 rgb_image[i, j, 1] = color_g * brightness
@@ -60,7 +55,6 @@ except ImportError:
     )
 
 
-# --- Step 2: Pure NumPy core function (the original logic) ---
 def _create_flim_image_numpy_core(mean_photon_arrival_time, intensity, colormap, lt_min, lt_max, int_min, int_max):
     """ Pure NumPy version of the core FLIM image creation logic. """
     LT_normalized = np.clip((mean_photon_arrival_time - lt_min) / (lt_max - lt_min), 0, 1)
@@ -69,7 +63,6 @@ def _create_flim_image_numpy_core(mean_photon_arrival_time, intensity, colormap,
     return LT_rgb * intensity_normalized[..., np.newaxis]
 
 
-# --- Step 3: Your original function, modified to be a dispatcher ---
 def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow, 
                       lt_min=None, lt_max=None,
                       int_min=None, int_max=None):

@@ -1,4 +1,4 @@
-# flopa/widgets/decay_panel.py (FINAL, with all new logic)
+# flopa/widgets/decay_panel.py
 
 import traceback
 from qtpy.QtWidgets import (
@@ -37,8 +37,7 @@ class DecayPanel(QWidget):
         self._init_ui()
         self._plot_decay(message="No data loaded.")
 
-    # --- _init_ui, update_data, plot_current_decay remain the same ---
-    # (pasting them for completeness)
+
     def _init_ui(self):
         layout = QVBoxLayout(self)
         controls_group = QGroupBox(""); controls_layout = QFormLayout(controls_group)
@@ -107,7 +106,6 @@ class DecayPanel(QWidget):
         self.decay_shift_changed.emit(current_shift)
         self._plot_decay(time_axis_ns, summed_ds.tcspc_histogram, shift=current_shift)
 
-    # --- _create_legend_controls is MODIFIED to call the sync function ---
     def _create_legend_controls(self):
         while self.legend_main_layout.count():
             child = self.legend_main_layout.takeAt(0)
@@ -130,24 +128,13 @@ class DecayPanel(QWidget):
         else:
             btn_from_view.clicked.connect(self._on_from_view_clicked)
         actions_layout.addWidget(btn_from_view)
-        # actions_layout.addStretch()
-        # self.legend_main_layout.addLayout(actions_layout)
-        # if 'detector' in self.dataset.dims and self.dataset.sizes['detector'] > 1:
-        #     detector_hbox = QHBoxLayout(); detector_label = QLabel("<b>Detector:</b>")
-        #     detector_hbox.addWidget(detector_label)
-        #     for i in self.dataset.coords['detector'].values:
-        #         btn = QPushButton(f"D{i}"); btn.setCheckable(True); btn.setChecked(False)
-        #         btn.setToolTip(f"Toggle all decays for Detector {i}"); btn.setFixedWidth(40)
-        #         btn.toggled.connect(lambda checked, det_idx=i: self._on_detector_toggle(checked, det_idx))
-        #         detector_hbox.addWidget(btn); self.detector_toggles.append(btn)
-        #     detector_hbox.addStretch()
-        #     self.legend_main_layout.addLayout(detector_hbox)
+
+
         separator = QFrame()
         separator.setFrameShape(QFrame.VLine)
         separator.setFrameShadow(QFrame.Sunken)
         actions_layout.addWidget(separator)
 
-        # 3. Conditionally add the detector-specific controls to the SAME layout
         if 'detector' in self.dataset.dims and self.dataset.sizes['detector'] > 1:
             detector_label = QLabel("<b>Detector:</b>")
             actions_layout.addWidget(detector_label)
@@ -176,13 +163,12 @@ class DecayPanel(QWidget):
         scroll_area.setWidget(scroll_container)
         self.legend_main_layout.addWidget(scroll_area)
         self.legend_group.setVisible(True)
-        self._sync_detector_toggles() # Sync toggles after building the legend
+        self._sync_detector_toggles() 
 
-    # --- _toggle_line_visibility is MODIFIED to call the sync function ---
     def _toggle_line_visibility(self, line, checked):
         line.set_visible(checked)
         self.decay_canvas.draw_idle()
-        self._sync_detector_toggles() # Sync toggles after any visibility change
+        self._sync_detector_toggles() 
         
     def clear_plot(self):
         self.last_plot_data = None; self.plotted_lines.clear()
@@ -192,7 +178,6 @@ class DecayPanel(QWidget):
     def _on_theme_changed(self):
         if self.last_plot_data: self._plot_decay(**self.last_plot_data)
 
-    # --- _plot_decay is correct from the last version ---
     def _plot_decay(self, time_axis=None, decay_data=None, message=None, shift=0):
         self.decay_ax.clear(); self.plotted_lines.clear()
         self.last_plot_data = {"time_axis": time_axis, "decay_data": decay_data, "shift": shift}
@@ -227,7 +212,6 @@ class DecayPanel(QWidget):
         self.decay_figure.tight_layout(pad=0.5); self.decay_canvas.draw_idle()
         self._create_legend_controls()
 
-    # --- check/uncheck MODIFIED to call the sync function ---
     def _check_all_visibility(self):
         for checkbox in self.plotted_lines.keys(): checkbox.setChecked(True)
         self._sync_detector_toggles()
@@ -236,21 +220,16 @@ class DecayPanel(QWidget):
         for checkbox in self.plotted_lines.keys(): checkbox.setChecked(False)
         self._sync_detector_toggles()
 
-    # --- on_detector_toggle is MODIFIED to call the sync function ---
     def _on_detector_toggle(self, is_checked, detector_index):
         for checkbox, data in self.plotted_lines.items():
             if data['coords'].get('detector') == detector_index:
                 checkbox.setChecked(is_checked)
-        # We don't need to call sync here because the individual checkbox toggles will trigger it
-        # This prevents redundant calls.
 
-    # --- on_from_view_clicked is NEW AND IMPROVED ---
     def _on_from_view_clicked(self):
         if self.flim_view_panel is None: return
         view_selectors = self.flim_view_panel.selectors
         
         # --- Part 1: Set aggregation state and replot ---
-        # This part correctly triggers a replot to match the aggregation
         self.sum_frames_check.blockSignals(True); self.sum_sequences_check.blockSignals(True); self.sum_detectors_check.blockSignals(True)
         self.sum_frames_check.setChecked(view_selectors['sum_frames'].isChecked())
         self.sum_sequences_check.setChecked(view_selectors['sum_sequences'].isChecked())
@@ -259,20 +238,16 @@ class DecayPanel(QWidget):
         self.plot_current_decay()
 
         # --- Part 2: Set selection state based on slicers ---
-        # The plot and legend have just been rebuilt. Now we filter the selection.
         frame_val = view_selectors['frame'].value()
         sequence_val = view_selectors['sequence'].value()
         detector_val = view_selectors['detector'].value()
 
-        # Check if dimensions are being summed (we already know this from above)
         is_sum_frames = self.sum_frames_check.isChecked()
         is_sum_sequences = self.sum_sequences_check.isChecked()
         is_sum_detectors = self.sum_detectors_check.isChecked()
 
         for checkbox, data in self.plotted_lines.items():
             coords = data['coords']
-            # A decay trace matches if its coordinate matches the slicer value,
-            # OR if that dimension is being aggregated anyway.
             frame_match = is_sum_frames or coords.get('frame') == frame_val
             sequence_match = is_sum_sequences or coords.get('sequence') == sequence_val
             detector_match = is_sum_detectors or coords.get('detector') == detector_val
@@ -280,9 +255,8 @@ class DecayPanel(QWidget):
             is_match = frame_match and sequence_match and detector_match
             checkbox.setChecked(is_match)
         
-        self._sync_detector_toggles() # Finally, update the toggles to reflect the new state
+        self._sync_detector_toggles() 
 
-    # --- NEW sync method ---
     def _sync_detector_toggles(self):
         """Updates detector toggle buttons based on the current selection state."""
         if not self.detector_toggles: return
@@ -290,7 +264,7 @@ class DecayPanel(QWidget):
         is_sum_detectors = self.sum_detectors_check.isChecked()
 
         for i, btn in enumerate(self.detector_toggles):
-            btn.blockSignals(True) # Prevent feedback loops
+            btn.blockSignals(True) 
             if is_sum_detectors:
                 btn.setChecked(False)
                 btn.setEnabled(False)
@@ -299,21 +273,18 @@ class DecayPanel(QWidget):
                 btn.setEnabled(True)
                 btn.setToolTip(f"Toggle all decays for Detector {i}")
                 
-                # Find all checkboxes for this detector
                 traces_for_this_detector = [
                     cb for cb, data in self.plotted_lines.items() 
                     if data['coords'].get('detector') == i
                 ]
                 
                 if not traces_for_this_detector:
-                    btn.setChecked(False) # No traces, so can't be "all checked"
+                    btn.setChecked(False) 
                 else:
-                    # Check if all corresponding traces are visible/checked
                     all_checked = all(cb.isChecked() for cb in traces_for_this_detector)
                     btn.setChecked(all_checked)
             btn.blockSignals(False)
         
-    # --- _on_export remains the same ---
     def _on_export(self):
         if not hasattr(self, 'last_plot_data') or self.last_plot_data is None: QMessageBox.warning(self, "No Data", "Please plot a decay curve first."); return
         export_format = self.export_combo.currentData()

@@ -72,7 +72,6 @@ class FlimViewPanel(QWidget):
         # --- Slicing Rows ---
         frame_selector = QSpinBox(); frame_selector.setRange(0, max(0, n_frames - 1))
         sum_frames_check = QCheckBox("Aggregate"); sum_frames_check.setEnabled(n_frames > 1)
-        # Create a compound widget for the right-hand side of the form row
         hbox_f = QHBoxLayout(); hbox_f.addWidget(frame_selector); hbox_f.addWidget(sum_frames_check)
         controls_layout.addRow("Frame:", hbox_f)
 
@@ -86,10 +85,9 @@ class FlimViewPanel(QWidget):
         hbox_c = QHBoxLayout(); hbox_c.addWidget(detector_selector); hbox_c.addWidget(sum_detectors_check)
         controls_layout.addRow("Detector:", hbox_c)
 
-        grid_layout.addWidget(controls_group, 0, 0, 2, 1) # Span 2 rows to align with other columns
+        grid_layout.addWidget(controls_group, 0, 0, 2, 1) 
 
 
-        # --- Column 2: Intensity Controls ---
         instrument_params = self.dataset.attrs.get('instrument_params', {})
         lifetime_units = instrument_params.get('resolution_unit', 'ch')
 
@@ -134,7 +132,6 @@ class FlimViewPanel(QWidget):
         intensity_layout.addStretch()
         grid_layout.addWidget(intensity_group, 0, 1, 2, 1)
 
-        # --- Column 3: Lifetime Controls ---
         lifetime_group = QGroupBox(f"Lifetime ({lifetime_units})")
         lifetime_layout = QHBoxLayout(lifetime_group)
         apply_style(lifetime_group, GROUP_BOX_STYLE_A)
@@ -146,7 +143,6 @@ class FlimViewPanel(QWidget):
         self.show_lifetime_check.setChecked(True)
         self.lt_colormap_combo = QComboBox()
         self.lt_colormap_combo.addItems(["rainbow", "hsv", "viridis"])
-        # --- SET DEFAULT VALUE ---
         self.lt_colormap_combo.setCurrentText("rainbow")
         lt_controls_hbox.addWidget(self.show_lifetime_check)
         lt_controls_hbox.addWidget(self.lt_colormap_combo)
@@ -170,12 +166,10 @@ class FlimViewPanel(QWidget):
         intensity_layout.addStretch()
         grid_layout.addWidget(lifetime_group, 0, 2, 2, 1)
 
-        # --- Column 4: Export Controls ---
         export_group = QGroupBox("Export")
         export_layout = QVBoxLayout(export_group)
         apply_style(export_group, GROUP_BOX_STYLE_A)
 
-        # Row 1: Format Selector and Save Button
         format_hbox = QHBoxLayout()
         self.export_format_combo = QComboBox()
         self.export_format_combo.addItems(["TIFF", "HDF5 (Full Dataset)"])
@@ -188,13 +182,11 @@ class FlimViewPanel(QWidget):
         format_hbox.addWidget(self.btn_export)
         export_layout.addLayout(format_hbox)
 
-        # Container for TIFF-specific options
         self.tiff_options_container = QWidget()
         tiff_options_layout = QVBoxLayout(self.tiff_options_container)
         tiff_options_layout.setContentsMargins(0, 5, 0, 0)
         export_layout.addWidget(self.tiff_options_container)
 
-        # Row 2: Data Selection (Checkboxes, simplified)
         data_hbox = QHBoxLayout()
         self.export_intensity_check = QCheckBox("Intensity")
         self.export_lifetime_check = QCheckBox("Lifetime")
@@ -223,7 +215,6 @@ class FlimViewPanel(QWidget):
         
         self.export_format_combo.currentTextChanged.connect(on_format_changed)
         if is_from_h5:
-            # If data is from H5, force format to TIFF and disable the combo box
             self.export_format_combo.setCurrentText("TIFF")
             self.export_format_combo.setEnabled(False)
         else:
@@ -263,20 +254,15 @@ class FlimViewPanel(QWidget):
 
                 if has_lifetime and self.smooth_lifetime_check.isChecked():
                     kernel_size = self.smooth_lifetime_spin.value()
-                    # Lifetime is weighted by the raw (unsmoothed) intensity
                     smoothed_lifetime, _ = smooth_weighted(array=raw_lifetime, count=raw_intensity, size=kernel_size)
-                # --- END MODIFIED ---
 
-                # 3. Cache the processed data for fast updates
                 tcspc_res_ns = instrument_params.get("tcspc_resolution_ns", 1.0)
                 self._cached_intensity = np.atleast_2d(smoothed_intensity) if smoothed_intensity is not None else None
                 self._cached_lifetime = np.atleast_2d(smoothed_lifetime) * tcspc_res_ns if smoothed_lifetime is not None else None
                 
-                # 4. Update histogram sliders with the new data
                 if self._cached_intensity is not None: self.intensity_slider.update_data(self._cached_intensity)
                 if self._cached_lifetime is not None: self.lifetime_slider.update_data(self._cached_lifetime)
             
-                # 5. Trigger a full display update, creating new layers
                 update_display(recalculate_rgb=True, create_new_layers=True)
                 self.view_changed.emit(self.selectors)
 
@@ -300,7 +286,6 @@ class FlimViewPanel(QWidget):
                     for layer_name in ['FLIM', 'Intensity', 'Lifetime']:
                         if layer_name in self.viewer.layers: self.viewer.layers.remove(layer_name)
                     
-                    # Create placeholder layers for all possible views
                     if has_intensity and has_lifetime:
                         self.viewer.add_image(np.zeros((*final_intensity.shape, 3), dtype=np.float32), name='FLIM', rgb=True)
                     if has_intensity:
@@ -317,7 +302,7 @@ class FlimViewPanel(QWidget):
 
                 if 'FLIM' in self.viewer.layers:
                     self.viewer.layers['FLIM'].visible = is_flim_mode
-                    if is_flim_mode and recalculate_rgb: # Only update data when needed
+                    if is_flim_mode and recalculate_rgb: 
                         lt_min, lt_max = self.lifetime_slider.value(); int_min, int_max = self.intensity_slider.value()
                         self.viewer.layers['FLIM'].data = create_FLIM_image(mean_photon_arrival_time=final_lifetime, intensity=final_intensity, colormap=cm.get_cmap(self.lt_colormap_combo.currentText()), lt_min=lt_min, lt_max=lt_max, int_min=int_min, int_max=int_max)
 
@@ -342,11 +327,9 @@ class FlimViewPanel(QWidget):
         def update_colormaps():
             if has_intensity: self.intensity_slider.set_colormap(cm.get_cmap(self.int_colormap_combo.currentText()))
             if has_lifetime: self.lifetime_slider.set_colormap(cm.get_cmap(self.lt_colormap_combo.currentText()))
-            # Changing a colormap might require an RGB update
             update_display(recalculate_rgb=True)
 
 
-        # --- Connect signals ---
         for selector in self.selectors.values():
             if isinstance(selector, QSpinBox): selector.valueChanged.connect(update_data_slice)
             if isinstance(selector, QCheckBox): selector.toggled.connect(update_data_slice)
@@ -354,14 +337,12 @@ class FlimViewPanel(QWidget):
         self.smooth_intensity_check.toggled.connect(update_data_slice)
         self.smooth_intensity_spin.valueChanged.connect(update_data_slice)
         
-        # --- Connections for fast updates ---
         self.show_intensity_check.toggled.connect(lambda: update_display(recalculate_rgb=True))
         self.int_colormap_combo.currentTextChanged.connect(update_colormaps)
         self.intensity_slider.valueChanged.connect(lambda: update_display(recalculate_rgb=False))
         self.intensity_slider.sliderReleased.connect(lambda: update_display(recalculate_rgb=True))
         
         if has_lifetime:
-            # --- NEW: Connect new smoothing widgets to the SLOW update function ---
             self.smooth_lifetime_check.toggled.connect(update_data_slice)
             self.smooth_lifetime_spin.valueChanged.connect(update_data_slice)
 
@@ -373,50 +354,7 @@ class FlimViewPanel(QWidget):
         update_data_slice()
         update_colormaps()
 
-    # def _on_export(self):
-    #     export_format = self.export_format_combo.currentText()
-    #     is_hdf5_export = "HDF5" in export_format
-
-    #     if is_hdf5_export:
-    #         # HDF5 logic is unchanged
-    #         if self.dataset is None:
-    #             QMessageBox.warning(self, "Export Error", "No dataset available.")
-    #             return
-    #         save_path, _ = QFileDialog.getSaveFileName(self, "Save Full Dataset as HDF5", "", "HDF5 Files (*.h5)")
-    #         if not save_path: return
-    #         success, error = export_dataset_as_hdf5(self.dataset, Path(save_path))
-    #         if success: QMessageBox.information(self, "Success", f"Full dataset saved to:\n{save_path}")
-    #         else: QMessageBox.critical(self, "Error", f"Failed to export HDF5 file:\n{error}")
-        
-    #     else: # TIFF Export
-    #         items_to_save = {
-    #             "intensity": self.export_intensity_check.isChecked(),
-    #             "lifetime": self.export_lifetime_check.isChecked(),
-    #             "flim_rgb": self.export_rgb_check.isChecked(),
-    #         }
-    #         if not any(items_to_save.values()):
-    #             QMessageBox.warning(self, "Export", "Please select at least one data type to export.")
-    #             return
-            
-    #         save_path, _ = QFileDialog.getSaveFileName(self, "Save Current View as TIFF", "", "TIFF files (*.tif *.tiff)")
-    #         if not save_path: return
-
-    #         success, error = export_view_as_tiff( # Note: new simpler function name
-    #             output_path=Path(save_path),
-    #             items_to_save=items_to_save,
-    #             base_dataset=self.dataset,
-    #             selectors=self.selectors,
-    #             processed_data={
-    #                 "intensity": self._cached_intensity,
-    #                 "lifetime": self._cached_lifetime,
-    #             },
-    #             lifetime_colormap=self.lt_colormap_combo.currentText(),
-    #             intensity_clims=self.intensity_slider.value(),
-    #             lifetime_clims=self.lifetime_slider.value()
-    #         )
-    #         if success: QMessageBox.information(self, "Success", f"TIFF file(s) saved successfully to:\n{save_path}")
-    #         else: QMessageBox.critical(self, "Error", f"Failed to export TIFF file(s):\n{error}")
-
+    
     def _on_export(self):
         self.export_status_label.setText("")
         export_format = self.export_format_combo.currentText()
@@ -443,8 +381,7 @@ class FlimViewPanel(QWidget):
                 folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save TIFF Files")
                 if not folder_path: return
 
-                # --- THE FIX: The function call now includes all required arguments ---
-                success, error = export_view_as_tiff( # Using your latest function name
+                success, error = export_view_as_tiff(
                     output_folder=Path(folder_path),
                     items_to_save=items_to_save,
                     base_dataset=self.dataset,
@@ -458,11 +395,10 @@ class FlimViewPanel(QWidget):
                 )
                 if not success: raise error
 
-            self.export_status_label.setStyleSheet("color: #ffbc2b; font-style: italic;") # Green for success
+            self.export_status_label.setStyleSheet("color: #ffbc2b; font-style: italic;") 
             self.export_status_label.setText("Saved successfully!")
 
         except Exception as e:
-            # --- On failure, update the status label and show a detailed popup ---
-            self.export_status_label.setStyleSheet("color: #F44336; font-style: italic;") # Red for failure
+            self.export_status_label.setStyleSheet("color: #F44336; font-style: italic;")
             self.export_status_label.setText("Export failed.")
             QMessageBox.warning(self, "Export Error", str(e))

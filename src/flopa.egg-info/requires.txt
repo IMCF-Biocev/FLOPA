@@ -1,2 +1,9 @@
 numpy
-scikit-image
+xarray
+napari[all]
+qtpy
+h5netcdf
+tifffile
+matplotlib
+scipy
+superqt

@@ -30,7 +30,6 @@ def plot_bidirectional_shift(
 
     shifts, scores, fit = plot_data[0], plot_data[1], plot_data[2]
     
-    # Normalize scores
     scores_normalized = (scores - scores.min()) / (scores.max() - scores.min())
     fit_normalized = (fit - fit.min()) / (fit.max() - fit.min())
     

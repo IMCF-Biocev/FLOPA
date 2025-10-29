@@ -5,5 +5,12 @@ Summary: tool for FLIM (TCSPC) data analysis
 Author-email: Zuzana Cockova <cockovaz@natur.cuni.cz>, Dalibor Panek <panekdal@natur.cuni.cz>
 License-File: LICENSE
 Requires-Dist: numpy
-Requires-Dist: scikit-image
+Requires-Dist: xarray
+Requires-Dist: napari[all]
+Requires-Dist: qtpy
+Requires-Dist: h5netcdf
+Requires-Dist: tifffile
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Requires-Dist: superqt
 Dynamic: license-file

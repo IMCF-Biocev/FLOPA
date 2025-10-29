@@ -155,6 +155,7 @@ def estimate_bidirectional_shift(reader: TTTRReader,
 
     return best_shift, np.stack((shifts,scores,fit))
 
+
 # --- Image functions ---
 
 def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow, 
@@ -174,7 +175,6 @@ def create_FLIM_image(mean_photon_arrival_time, intensity, colormap=cm.rainbow,
     - FLIM_image: 3D numpy array (H, W, 3) with RGB values
     """
 
-    # Validate shape
     if mean_photon_arrival_time.shape != intensity.shape:
         raise ValueError("Lifetime and intensity arrays must have the same shape")
 
@@ -249,11 +249,9 @@ def smooth_weighted(
 
     
     """
-    # Safety first
     array = np.asarray(array)
     count = np.asarray(count)
 
-    # Sanity checks
     if array.ndim != 2 or count.ndim != 2:
         raise ValueError("array and count must both be 2D arrays")
     assert array.shape == count.shape, "array and count must have the same shape"
@@ -315,10 +313,8 @@ def smooth_count(
     - This function uses a uniform kernel (`np.ones`) for convolution which is effectively the same as 2D binning. 
    
     """
-    # Safety first
     count = np.asarray(count)
 
-    # Sanity checks
     if count.ndim != 2:
         raise ValueError("count must be 2D array")
 
@@ -493,72 +489,6 @@ def shift_decay(arr, n):
     return wrapped
 
 
-# def sum_hyperstack_dict(data: dict[str, xr.DataArray], dims):
-#     """
-#     Collapse a dict of DataArrays along given dimensions, preserving structure and names.
-    
-#     Keys expected:
-#       - 'intensity' : summed directly
-#       - 'lifetime'  : weighted avg by intensity; zeros where denom==0
-#       - 'phasor_g'  : weighted avg by intensity; NaN where denom==0; ignore input NaNs
-#       - 'phasor_s'  : same as phasor_g
-    
-#     Parameters
-#     ----------
-#     data : dict of str -> xr.DataArray
-#         Input data package (may contain a subset of keys).
-#     dims : str or list of str
-#         Dimension(s) to sum along.
-    
-#     Returns
-#     -------
-#     dict of str -> xr.DataArray
-#         Reduced data package, same keys as input, with names preserved.
-#     """
-#     if isinstance(dims, str):
-#         dims = [dims]
-
-#     out = {}
-
-#     # intensity (photon_count)
-#     if "intensity" in data:
-#         intensity = data["intensity"]
-#         photon_sum = intensity.sum(dim=[d for d in dims if d in intensity.dims], keepdims=True)
-#         out["intensity"] = (
-#             photon_sum.astype("uint64")
-#             .assign_attrs(intensity.attrs)
-#             .rename(intensity.name)  # preserve name
-#         )
-#     else:
-#         photon_sum = None
-
-#     # lifetime (mean_arrival_time)
-#     if "lifetime" in data and photon_sum is not None:
-#         lt = data["lifetime"]
-#         denom = photon_sum if set(dims) & set(lt.dims) else intensity
-#         numer = (lt * intensity).sum(dim=[d for d in dims if d in lt.dims], keepdims=True)
-#         avg = numer / xr.where(denom > 0, denom, 0)
-#         out["lifetime"] = (
-#             avg.astype("float32")
-#             .assign_attrs(lt.attrs)
-#             .rename(lt.name)  # preserve name
-#         )
-
-#     # phasor_g / phasor_s
-#     for var in ("phasor_g", "phasor_s"):
-#         if var in data and photon_sum is not None:
-#             pa = data[var]
-#             denom = photon_sum if set(dims) & set(pa.dims) else intensity
-#             numer = (pa.fillna(0) * intensity).sum(dim=[d for d in dims if d in pa.dims], keepdims=True)
-#             avg = numer / xr.where(denom > 0, denom, np.nan)
-#             out[var] = (
-#                 avg.astype("float32")
-#                 .assign_attrs(pa.attrs)
-#                 .rename(pa.name)  # preserve name
-#             )
-
-#     return out
-
 
 def aggregate_dataset(ds: xr.Dataset, dims):
     """
@@ -572,7 +502,6 @@ def aggregate_dataset(ds: xr.Dataset, dims):
     if isinstance(dims, str):
         dims = [dims]
 
-    # Optional sanity check
     missing = [d for d in dims if d not in ds.dims]
     if missing:
         raise ValueError(f"Requested dims not in dataset: {missing}")

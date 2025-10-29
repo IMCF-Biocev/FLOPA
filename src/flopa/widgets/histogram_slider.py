@@ -69,93 +69,22 @@ class HistogramSlider(QWidget):
         self.ax.tick_params(axis='x', colors='gray', labelsize=9)
         # self.figure.tight_layout(pad=0.82, h_pad=0.1)
         self.figure.subplots_adjust(
-            left=0.08,    # Increase left padding (e.g., from 0.05 to 0.1)
-            right=0.95,   # Decrease right padding (e.g., from 0.95 to 0.9)
-            bottom=0.6,  # Increase bottom padding to make space for x-ticks
-            top=0.9     # Decrease top padding
+            left=0.08,     
+            right=0.95,   
+            bottom=0.6,  
+            top=0.9     
         )
 
-    # def _on_slider_moved(self):
-    #     if self._is_updating: return
-    #     self._update_visuals()
-    #     self.valueChanged.emit(self.slider.value())
 
-    # def set_colormap(self, cmap):
-    #     self.colormap = cmap
-    #     self._update_visuals()
-
-    # def update_data(self, data_slice: np.ndarray):
-    #     if data_slice is None or data_slice.size == 0: return
-    #     valid_data = data_slice[np.isfinite(data_slice)]
-    #     if valid_data.size == 0: return
-    #     self.data = valid_data
-    #     min_val, max_val = np.min(self.data), np.max(self.data)
-
-    #     self._is_updating = True
-    #     self.slider.setRange(min_val, max_val)
-    #     low, high = np.percentile(self.data, [5, 95])
-    #     if not np.isfinite([low, high]).all():
-    #         low, high = 0, 1
-
-    #     if low >= high:
-    #         # collapse case: enforce a minimal width
-    #         low, high = min_val, min_val + 1
-
-    #     self.slider.setRange(min_val, max_val if max_val > min_val else min_val + 1)
-    #     self.slider.setValue((low, high))
-
-    #     self._is_updating = False
-        
-    #     # When data changes, trigger a full redraw including the histogram bars
-    #     self._update_visuals(redraw_hist=True)
-
-    # def _update_visuals(self, redraw_hist=False):
-    #     """
-    #     Updates all visuals on the canvas. If redraw_hist is True, it also
-    #     re-calculates the histogram bars.
-    #     """
-    #     if self.data is None and not redraw_hist: return
-        
-    #     # --- THE DEFINITIVE FIX ---
-    #     # Instead of removing artists, we clear the axes and redraw everything.
-    #     # This is the most robust and error-free method.
-    #     self.ax.clear()
-    #     # ------------------------
-
-    #     # If we have data, redraw the histogram
-    #     if self.data is not None:
-    #         # Get the full range from the slider for the histogram bins
-    #         full_min, full_max = self.slider.minimum(), self.slider.maximum()
-    #         self.ax.hist(self.data, bins=50, color="#FFFFFF29", log=True, range=(full_min, full_max))
-    #         self.ax.set_xlim(full_min, full_max)
-            
-    #         # Now draw the lines and gradient
-    #         min_val, max_val = self.slider.value()
-    #         self.ax.axvline(min_val, color='cyan', linestyle='--', linewidth=1)
-    #         self.ax.axvline(max_val, color='cyan', linestyle='--', linewidth=1)
-            
-    #         grad = np.linspace(0, 1, 256).reshape(1, 256)
-    #         self.ax.imshow(
-    #             grad, aspect='auto', extent=[min_val, max_val, *self.ax.get_ylim()],
-    #             cmap=self.colormap, origin='lower', zorder=0, alpha=0.8
-    #         )
-            
-    #         # Also update the labels here
-    #         self.min_label.setText(f"{min_val:.2f}")
-    #         self.max_label.setText(f"{max_val:.2f}")
-
-    #     self._format_ax()
-    #     self.canvas.draw_idle()
 
     def _on_slider_moved(self):
         if self._is_updating: return
-        self._update_visuals(redraw_hist=False) # Fast update, only lines/gradient
+        self._update_visuals(redraw_hist=False) 
         self.valueChanged.emit(self.slider.value())
     
     def _on_slider_released(self):
         """Called once when the user releases the slider."""
         if self._is_updating: return
-        # The visuals are already updated, we just need to emit the final value.
         self.sliderReleased.emit(self.slider.value())
 
 
@@ -188,11 +117,8 @@ class HistogramSlider(QWidget):
         
         current_xlim = self.slider.minimum(), self.slider.maximum()
 
-        # --- THE DEFINITIVE FIX ---
-        # Clear the axes and redraw everything. This is the most stable method.
         self.ax.clear()
         
-        # Redraw histogram bars, lines, and gradient
         self.ax.hist(self.data, bins=50, color="#FFFFFF40", log=True, range=current_xlim)
         
         min_val, max_val = self.slider.value()
@@ -206,7 +132,6 @@ class HistogramSlider(QWidget):
             grad, aspect='auto', extent=[min_val, max_val, *self.ax.get_ylim()],
             cmap=self.colormap, origin='lower', zorder=-1, alpha=0.8
         )
-        # ------------------------
         
         self.ax.set_xlim(current_xlim)
         self._format_ax()
@@ -224,15 +149,8 @@ class HistogramSlider(QWidget):
 
     def value(self):
         """Public method to get the current slider value tuple."""
-        # The QRangeSlider can sometimes return floats, so we cast to int for consistency
         min_val, max_val = self.slider.value()
         if self.integer_mode:
             return (int(min_val), int(max_val))
         return (min_val, max_val)
     
-    # def value(self):
-    #     """
-    #     Public method to get the current slider value tuple (min, max).
-    #     This provides a clean public API for the parent widget.
-    #     """
-    #     return self.slider.value()

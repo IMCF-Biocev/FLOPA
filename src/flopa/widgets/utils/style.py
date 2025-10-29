@@ -27,10 +27,10 @@ def dark_plot(ax, fig):
 
 def light_plot(ax, fig):
     """Applies a light theme to a matplotlib axis and figure."""
-    light_bg = "#E0E0E0"      # Pure white background
-    dark_text = "#262930"     # Black text for high contrast
-    light_grid = "#E0E0E0"    # Light grey for grid lines and spines
-
+    light_bg = "#E0E0E0"      
+    dark_text = "#262930"     
+    light_grid = "#E0E0E0"    
+    
     fig.set_facecolor(light_bg)
     ax.set_facecolor(light_bg)
 

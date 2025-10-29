@@ -53,7 +53,6 @@ class PtuProcessingPanel(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(2, 2, 2, 2)
 
-        # --- Group 1: Select Data Source ---
         file_group = QGroupBox("Load Data")
         apply_style(file_group, GROUP_BOX_STYLE_A)
         file_layout = QVBoxLayout(file_group)
@@ -63,9 +62,9 @@ class PtuProcessingPanel(QWidget):
         self.select_ptu_btn.clicked.connect(self._select_ptu_file)
         button_layout.addWidget(self.select_ptu_btn)
         self.select_h5_btn = QPushButton("Load H5...")
-        self.select_h5_btn.setEnabled(True) # Enable the button
+        self.select_h5_btn.setEnabled(True) 
         self.select_h5_btn.setToolTip("Load a previously exported FLOPA HDF5 dataset.")
-        self.select_h5_btn.clicked.connect(self._on_load_h5) # Connect to new handler
+        self.select_h5_btn.clicked.connect(self._on_load_h5) 
         button_layout.addWidget(self.select_h5_btn)
         file_layout.addWidget(self.file_label)
         file_layout.addLayout(button_layout)
@@ -74,10 +73,9 @@ class PtuProcessingPanel(QWidget):
 
         self.ptu_controls_container = QWidget()
         ptu_layout = QVBoxLayout(self.ptu_controls_container)
-        ptu_layout.setContentsMargins(2, 2, 2, 2) # No margins for the container itself
+        ptu_layout.setContentsMargins(2, 2, 2, 2) 
 
 
-        # --- Group 2: Header Info ---
         self.header_group = QGroupBox("Header Info")
         apply_style(self.header_group, GROUP_BOX_STYLE_A)
         header_layout = QVBoxLayout(self.header_group)
@@ -101,7 +99,6 @@ class PtuProcessingPanel(QWidget):
         ptu_layout.addWidget(self.header_group)
         self.header_group.setVisible(False)
 
-        # --- Group 3: Scan Configuration ---
 
         config_group = self._create_config_group()
         ptu_layout.addWidget(config_group)
@@ -109,7 +106,6 @@ class PtuProcessingPanel(QWidget):
         self.config_group.setVisible(False)
 
 
-        # --- Group 4: Reconstruction ---
         self.recon_group = QGroupBox("Reconstruction")
         apply_style(self.recon_group, GROUP_BOX_STYLE_A)
         recon_layout = QFormLayout(self.recon_group)
@@ -148,10 +144,9 @@ class PtuProcessingPanel(QWidget):
 
         self._show_ptu_view()
 
-    # --- NEW: UI State Management Methods ---
     def _show_ptu_view(self):
         """Shows the PTU controls and hides the H5 metadata display."""
-        self.ptu_controls_container.setVisible(True) # Use the container widget
+        self.ptu_controls_container.setVisible(True) 
         self.h5_metadata_group.setVisible(False)
         if self._current_ptu_header:
             self._display_ptu_header(self._current_ptu_header)
@@ -159,11 +154,10 @@ class PtuProcessingPanel(QWidget):
     def _format_dict_for_display(self, data_dict: dict) -> str:
         """Formats a dictionary into a clean, indented, key-value string."""
         if not isinstance(data_dict, dict):
-            return str(data_dict) # Return as is if not a dict
+            return str(data_dict) 
         
         lines = []
         for key, value in data_dict.items():
-            # Add two spaces for indentation
             lines.append(f"  {key}: {value}")
         return "\n".join(lines)
     
@@ -178,12 +172,10 @@ class PtuProcessingPanel(QWidget):
 
         if 'scan_config' in dataset.attrs:
             metadata_text += "scan_config:\n"
-            # Use the new helper function for nice formatting
             metadata_text += self._format_dict_for_display(dataset.attrs['scan_config']) + "\n"
         
         if 'instrument_params' in dataset.attrs:
             metadata_text += "\ninstrument_params:\n"
-            # Use the new helper function again
             metadata_text += self._format_dict_for_display(dataset.attrs['instrument_params']) + "\n"
         
         self.h5_metadata_display.setText(metadata_text)
@@ -193,14 +185,12 @@ class PtuProcessingPanel(QWidget):
         # apply_style(group , GROUP_BOX_STYLE_A) # Your style is applied here
         main_layout = QVBoxLayout(group)
 
-        # --- Top part: Two-column grid for main settings ---
         grid_layout = QGridLayout()
         grid_layout.setColumnStretch(0, 4)
         grid_layout.setColumnStretch(1, 5)
 
         # Left Column
-        left_group = QGroupBox() # Use a plain groupbox without a title
-        #left_group.setFlat(True) # Removes the groupbox border for a cleaner look
+        left_group = QGroupBox() 
         left_layout = QFormLayout(left_group)
         self.lines_spin = QSpinBox(); self.lines_spin.setRange(1, 10000); left_layout.addRow("Lines:", self.lines_spin)
         self.pixels_spin = QSpinBox(); self.pixels_spin.setRange(1, 10000); left_layout.addRow("Pixels per Line:", self.pixels_spin)
@@ -220,24 +210,21 @@ class PtuProcessingPanel(QWidget):
         self.accu_container = QWidget(); self.accu_container_layout = QVBoxLayout(self.accu_container); self.accu_container_layout.setContentsMargins(5, 5, 5, 5); self.accu_container_layout.setSpacing(5)
         self.accu_scroll_area.setWidget(self.accu_container); self.accu_spinboxes = []
         accu_hbox = QHBoxLayout()
-        accu_hbox.setContentsMargins(0, 0, 0, 0) # No extra margins on this layout
+        accu_hbox.setContentsMargins(0, 0, 0, 0) 
         
-        # Add the scroll area to the horizontal layout
         accu_hbox.addWidget(self.accu_scroll_area)
         
-        # Add a stretch factor to the right. This creates the empty space.
         accu_hbox.addStretch(1) 
         right_layout.addRow("Accumulations:", accu_hbox)
         grid_layout.addWidget(right_group, 0, 1)
         
         main_layout.addLayout(grid_layout)
 
-        # --- Bottom part: New group for Bidirectional settings ---
         self.bidir_group = QGroupBox("Bidirectional Scan")
-        self.bidir_group.setObjectName("plain") # Give it the target name
+        self.bidir_group.setObjectName("plain") 
 
-        self.bidir_group.setCheckable(True) # Makes the whole groupbox a checkbox
-        self.bidir_group.setChecked(False)  # Start unchecked
+        self.bidir_group.setCheckable(True) 
+        self.bidir_group.setChecked(False) 
         
         bidir_layout = QFormLayout(self.bidir_group)
 
@@ -252,7 +239,7 @@ class PtuProcessingPanel(QWidget):
         else: self.btn_plot_shift.setText("Plot")
         self.btn_plot_shift.setToolTip("Plot shift correlation curve"); self.btn_plot_shift.clicked.connect(self._on_plot_shift_clicked); self.btn_plot_shift.setEnabled(False)
         
-        # Add buttons to a horizontal layout
+
         button_hbox = QHBoxLayout()
         self.shift_text = QLabel("Phase Shift: ")
         button_hbox.addWidget(self.shift_text)
@@ -266,20 +253,16 @@ class PtuProcessingPanel(QWidget):
         
         main_layout.addWidget(self.bidir_group)
         
-        # --- Connections and initial state ---
         self.sequences_spin.valueChanged.connect(self._update_accumulation_widgets)
         self._update_accumulation_widgets()
         return group 
 
     def _display_ptu_header(self, header_dict):
-        # This function name is now a bit misleading, but we'll adapt it.
-        # It's called when a PTU file is selected.
         header_text = "--- PTU Header ---\n"
         for key, value in header_dict.items():
             header_text += f"{key}: {value}\n"
         self.metadata_display.setText(header_text)
 
-    # --- Modify the H5 loader to also display metadata ---
     @Slot()
     def _on_load_h5(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Load FLOPA HDF5 Dataset", "", "HDF5 Files (*.h5)")
@@ -289,10 +272,8 @@ class PtuProcessingPanel(QWidget):
             dataset = load_h5_dataset(Path(filepath))
             dataset.attrs['source_filename'] = Path(filepath).name
             
-            # Switch to the H5 view and display metadata
             self._show_h5_view(dataset)
             
-            # Emit the dataset to update all other panels
             self.reconstruction_finished.emit(dataset)
             
         except Exception as e:
@@ -446,18 +427,16 @@ class PtuProcessingPanel(QWidget):
             scan_config=scan_config,
             outputs=outputs_to_generate,
             tcspc_channels_override=tcspc_override,
-            logger=self.logger # Pass the thread-safe logger
+            logger=self.logger 
         )
 
         self.logger = ThreadSafeLogger()
         self.logger.log_updated.connect(self.log_text_edit.appendPlainText)
 
-        # --- 4. Connect the worker's signals to handler methods ---
         worker.signals.result.connect(lambda ds: self._on_reconstruction_result(ds, scan_config))
         worker.signals.finished.connect(self._on_reconstruction_finished)
         worker.signals.error.connect(self._on_reconstruction_error)
         
-        # --- 5. Execute the worker on the thread pool ---
         self.threadpool.start(worker)
 
 
@@ -471,12 +450,10 @@ class PtuProcessingPanel(QWidget):
         dataset.attrs['instrument_params'] = instrument_params
         dataset.attrs['scan_config'] = scan_config.to_dict()
         dataset.attrs['source_filename'] = self.ptu_filepath.name
-        # Emit the final signal to the main widget
         self.reconstruction_finished.emit(dataset)
         
     def _on_reconstruction_finished(self):
         """This slot is called when the worker thread is done (success or fail)."""
-        # Re-enable the UI
         self.reconstruct_btn.setEnabled(True)
         self.reconstruct_btn.setText("Reconstruct Image")
         print("Reconstruction thread finished.")

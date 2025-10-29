@@ -49,15 +49,12 @@ class FlimWidget(QWidget):
         """        
         source_name = dataset.attrs.get('source_filename', '')
         is_from_h5 = not source_name or source_name.endswith('.h5')
-        # 1. Store the new dataset as the central state
         self.reconstructed_dataset = dataset
 
-        # 2. Distribute the complete dataset to all consumer panels.
         self.view_tab.update_data(dataset, is_from_h5=is_from_h5)
         self.phasor_tab.update_data(dataset)
         self.decay_tab.update_data(dataset)
 
-        # 3. Enable/disable tabs based on the dataset's content
         data_vars = dataset.data_vars
         
         has_phasor_data = "phasor_g" in data_vars  
@@ -78,12 +75,9 @@ class FlimWidget(QWidget):
         is_shift_active = (shift_value != 0)
         self.phasor_tab.cal_by_shift_radio.setEnabled(is_shift_active)
         
-        # If the shift is deactivated, ensure the phasor panel doesn't stay on that mode
         if not is_shift_active and self.phasor_tab.cal_by_shift_radio.isChecked():
             self.phasor_tab.cal_by_factor_radio.setChecked(True)
 
-        # Store the current shift value in the dataset attributes so the
-        # phasor panel can access it for calculations.
         if self.reconstructed_dataset is not None:
             if 'instrument_params' not in self.reconstructed_dataset.attrs:
                 self.reconstructed_dataset.attrs['instrument_params'] = {}
