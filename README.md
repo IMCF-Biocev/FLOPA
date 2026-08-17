@@ -1,13 +1,26 @@
 # FLOPA
 
-**FLOPA - FLIM Open, Process, and Analyze**
+## Deprecated repository
 
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**This repository is no longer maintained.**
 
-A python based tool for Fluorescence Lifetime Imaging Microscopy (FLIM) data opening, processing and analysis. Designed as a modular widget for the [napari](https://napari.org/) multi-dimensional image viewer. Planned as [napari](https://napari.org/) plugin.
+FLOPA has moved to a dedicated **napari plugin** repository:
 
-FLOPA tool is made to handle the TTTR files from various FLIM data acquisition settings, providing a clear interface for configuring reconstruction parameters and generating insightful data products like intensity/lifetime images, decay curves, and phasor plots. 
+**https://github.com/cockovaz/napari-flopa**
 
+Please use the new repository for the current implementation, installation instructions, documentation, bug reports, and further development.
+
+---
+
+## About FLOPA
+
+**FLOPA — FLIM Open, Process, and Analyze** — is a Python-based tool for opening, processing, and analysing **Fluorescence Lifetime Imaging Microscopy (FLIM)** data.
+
+The original project was developed as a Python package and napari-based widget for working with time-tagged time-resolved (TTTR) FLIM data, in particular `.ptu` files. It provided functionality for reconstructing FLIM data and generating intensity images, lifetime-related measurements, TCSPC decay histograms, and phasor representations.
+
+This repository contains the **original/deprecated implementation** of FLOPA and is retained primarily for historical reference.
+
+The deprecated implementation included functionality for:
 
 | 1. PTU Reconstruction & Configuration | 2. Pixel-based Phasor |
 | :---: | :---: |
@@ -16,79 +29,74 @@ FLOPA tool is made to handle the TTTR files from various FLIM data acquisition s
 | <img src="assets/screens/s01_phasor_obj.png" width="575"> | <img src="assets/screens/s01_decay.png" width="600"> |
 
 
-
---- 
-
-### Key Features
-
-**Currently implemented**
-  * PTU file import
-  * header / metadata configuration option (lines, pixels, frames, sequences, accumulations)
-  * support for sequential and bidirectional scan (option to estimate and correct for bidirectional phase shift)
-  * preprocessing tools (binning, smoothing)
-  * intensity and mean arrival time image generation and export
-  * plotting TCSPC decay histograms
-  * phasor analysis (plot and export)
-    * pixel-based phasor
-    * object-based phasor (from label mask)
-
-**Planned functionalities**
-  * batch processing widget
-  * multi-format data import (.sdt, and more)
-  * segmentation from phasor plot (interactive ROI selection)
-  * object-based TCSPC decay histograms
-  * decay fitting
+Some of these capabilities have since been reorganized and extended in the maintained napari plugin.
 
 ---
 
-### Project Structure
+---
 
-The project is structured as a Python package, allowing its functions to be used in scripts and notebooks, with a top-level script for launching the napari GUI.
+## Migration to the napari plugin
+
+Development has moved from this repository to:
+
+**[napari-flopa](https://github.com/cockovaz/napari-flopa)**
+
+See the **[napari-flopa repository](https://github.com/cockovaz/napari-flopa)** for the current feature set and documentation.
 
 ---
 
-### Installation and Usage
+## Do not use this repository for new installations
 
-This project can be used in two ways: as a standalone napari application (recommended for interactive use) or as a Python library (for scripting and notebooks).
+The installation instructions previously provided here referred to the development version of FLOPA and are no longer the recommended way to install or use the software.
 
-**1. Installation**
+For a current installation, use the maintained package instead:
 
-First, set up the project and install its dependencies.
+```bash
+pip install "napari-flopa[all]"
+```
 
-*   **Prerequisites:** Python 3.9+, Git
-*   **Steps:**
-    1.  **Clone the repository:**
-        ```bash
-        git clone https://your-repository-url/FLOPA.git
-        cd FLOPA
-        ```
-    2.  **Create and activate a virtual environment:**
-        ```bash
-        conda create --name flopa python=3.9
-        conda activate flopa
-        ```
-    3.  **Install the package in editable mode:**
-        This installs all required dependencies from `pyproject.toml` and makes the `flopa` package importable.
-        ```bash
-        pip install -e .
-        ```
+Or, if napari is already installed in the target environment:
 
-**2. Usage**
+```bash
+pip install napari-flopa
+```
 
-#### Option A: Running the Napari Widget (interactive)
+The current plugin requires **Python ≥ 3.11**. See the maintained repository for the complete installation and usage instructions.
 
-This is the primary method for interactive data exploration and analysis.
+---
 
-1.  Make sure your virtual environment is activated.
-2.  Run the `launch_napari.py` script from the project's root directory:
-    ```bash
-    python launch_napari.py
-    ```
-This will launch a napari window with the full FLOPA widget docked and ready for you to load a file.
 
-#### Option B: Using as a Python Library (for scripting and notebooks)
+## Source code history
 
-The core logic of FLOPA is accessible as a library, allowing you to build custom analysis workflows.
+This repository represents an earlier stage of the FLOPA project. It is preserved so that previous code, notebooks, documentation, and development history remain accessible.
+
+The original repository contained the core Python code together with example notebooks and tests.
+
+For active development, please use:
+
+**https://github.com/cockovaz/napari-flopa**
+
+---
+
+## License
+
+This original repository was distributed under the **GPL-3.0** license.
+
+Note that the maintained `napari-flopa` project is distributed under the **MIT license**. Refer to the license in that repository for the terms applicable to the current implementation.
+
+---
+
+## Status
+
+**Deprecated / archived for historical reference.**
+
+No new features or bug fixes are planned for this repository.
+
+**Current project:** [napari-flopa](https://github.com/cockovaz/napari-flopa)
+
+
+
+
 
 1.  Make sure your virtual environment is activated.
 2.  Start a Python interpreter, an IPython session, or a Jupyter Notebook.
